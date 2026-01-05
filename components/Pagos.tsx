@@ -22,7 +22,7 @@ export const Pagos: React.FC = () => {
   const [tipoPago, setTipoPago] = useState<'Abono' | 'Total'>('Abono');
 
   useEffect(() => {
-    db.getConfig().then(c => setTasaCambio(c.tasaCambio));
+    db.getConfig().then(c => setTasaCambio(c.tasaCambio || 0));
   }, []);
 
   const buscarRepresentante = async () => {
@@ -34,7 +34,7 @@ export const Pagos: React.FC = () => {
       if (rep) {
         setRepresentante(rep);
         const deuda = await db.calcularSaldoPendiente(rep.cedula);
-        setSaldoPendiente(deuda);
+        setSaldoPendiente(deuda || 0);
       } else {
         setRepresentante(null);
         setError('Representante no encontrado');
@@ -116,7 +116,7 @@ export const Pagos: React.FC = () => {
       setReferencia('');
       setObservaciones('');
       const nuevaDeuda = await db.calcularSaldoPendiente(representante.cedula);
-      setSaldoPendiente(nuevaDeuda);
+      setSaldoPendiente(nuevaDeuda || 0);
     } catch (e) {
       alert("Error guardando el pago. Verifique conexión.");
     } finally {
@@ -133,7 +133,7 @@ export const Pagos: React.FC = () => {
           </h2>
           <div className="flex items-center gap-2 text-sm bg-indigo-50 px-3 py-1 rounded-full text-indigo-700">
             <RefreshCw size={14} />
-            <span>Tasa Actual: <strong>Bs. {tasaCambio.toFixed(2)}</strong></span>
+            <span>Tasa Actual: <strong>Bs. {(tasaCambio || 0).toFixed(2)}</strong></span>
           </div>
         </div>
         
@@ -178,8 +178,8 @@ export const Pagos: React.FC = () => {
               <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-orange-100">
                 <p className="text-orange-800 text-xs uppercase font-bold tracking-wider">Saldo Pendiente</p>
                 <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-orange-600">${saldoPendiente.toFixed(2)}</span>
-                  <span className="text-sm text-orange-400 font-medium">~ Bs. {(saldoPendiente * tasaCambio).toFixed(2)}</span>
+                  <span className="text-2xl font-bold text-orange-600">${(saldoPendiente || 0).toFixed(2)}</span>
+                  <span className="text-sm text-orange-400 font-medium">~ Bs. {((saldoPendiente || 0) * (tasaCambio || 0)).toFixed(2)}</span>
                 </div>
               </div>
             </div>

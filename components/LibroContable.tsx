@@ -33,7 +33,7 @@ export const LibroContable: React.FC = () => {
     cargarDatos();
   }, [fechaFiltro]);
 
-  const totalUSD = pagosVerificados.reduce((acc, p) => acc + p.monto, 0);
+  const totalUSD = pagosVerificados.reduce((acc, p) => acc + (p.monto || 0), 0);
   const totalBsEstimado = pagosVerificados.reduce((acc, p) => acc + (p.montoBolivares || 0), 0);
 
   const descargarReporteLibro = () => {
@@ -48,8 +48,8 @@ export const LibroContable: React.FC = () => {
         p.nombreRepresentante,
         p.metodoPago,
         p.referencia,
-        `$${p.monto.toFixed(2)}`,
-        p.montoBolivares ? `Bs ${p.montoBolivares.toFixed(2)}` : '-'
+        `$${(p.monto || 0).toFixed(2)}`,
+        p.montoBolivares ? `Bs ${(p.montoBolivares || 0).toFixed(2)}` : '-'
     ]);
 
     (doc as any).autoTable({
@@ -98,7 +98,7 @@ export const LibroContable: React.FC = () => {
         <div className="bg-green-50 p-6 rounded-xl border border-green-100 flex items-center justify-between">
             <div>
                 <p className="text-sm font-medium text-green-700 uppercase tracking-wider">Total Ingresos USD</p>
-                <h3 className="text-3xl font-bold text-green-800 mt-1">${totalUSD.toFixed(2)}</h3>
+                <h3 className="text-3xl font-bold text-green-800 mt-1">${(totalUSD || 0).toFixed(2)}</h3>
             </div>
             <div className="p-3 bg-green-200 rounded-full text-green-700">
                 <TrendingUp size={24} />
@@ -107,7 +107,7 @@ export const LibroContable: React.FC = () => {
         <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 flex items-center justify-between">
             <div>
                 <p className="text-sm font-medium text-blue-700 uppercase tracking-wider">Total Ingresos Bs (Ref)</p>
-                <h3 className="text-3xl font-bold text-blue-800 mt-1">Bs. {totalBsEstimado.toFixed(2)}</h3>
+                <h3 className="text-3xl font-bold text-blue-800 mt-1">Bs. {(totalBsEstimado || 0).toFixed(2)}</h3>
             </div>
             <div className="p-3 bg-blue-200 rounded-full text-blue-700">
                 <TrendingUp size={24} />
@@ -143,8 +143,8 @@ export const LibroContable: React.FC = () => {
                                 <span className="block text-gray-700">{pago.metodoPago}</span>
                                 <span className="text-xs font-mono text-gray-400">Ref: {pago.referencia}</span>
                             </td>
-                            <td className="px-6 py-4 text-right font-bold text-gray-900">${pago.monto.toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-gray-600">{pago.montoBolivares ? `Bs. ${pago.montoBolivares.toFixed(2)}` : '-'}</td>
+                            <td className="px-6 py-4 text-right font-bold text-gray-900">${(pago.monto || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right text-gray-600">{pago.montoBolivares ? `Bs. ${(pago.montoBolivares || 0).toFixed(2)}` : '-'}</td>
                         </tr>
                     ))
                 )}

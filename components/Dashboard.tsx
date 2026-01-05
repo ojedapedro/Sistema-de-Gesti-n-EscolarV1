@@ -33,7 +33,7 @@ export const Dashboard: React.FC = () => {
 
   const totalRecaudado = pagos
     .filter(p => p.estado === EstadoPago.VERIFICADO)
-    .reduce((sum, p) => sum + p.monto, 0);
+    .reduce((sum, p) => sum + (p.monto || 0), 0);
 
   const pagosPendientes = pagos.filter(p => p.estado === EstadoPago.PENDIENTE_VERIFICACION).length;
   const totalAlumnos = reps.reduce((sum, r) => sum + r.alumnos.length, 0);
@@ -45,7 +45,7 @@ export const Dashboard: React.FC = () => {
         <div className="bg-white px-4 py-2 rounded-lg shadow-sm border border-indigo-100 flex items-center gap-2">
             <TrendingUp size={18} className="text-indigo-600"/>
             <span className="text-sm font-medium text-gray-600">Tasa BCV:</span>
-            <span className="text-lg font-bold text-slate-800">Bs. {tasa.toFixed(2)}</span>
+            <span className="text-lg font-bold text-slate-800">Bs. {(tasa || 0).toFixed(2)}</span>
         </div>
       </div>
 
@@ -56,7 +56,7 @@ export const Dashboard: React.FC = () => {
             </div>
             <div>
                 <p className="text-sm text-gray-500 font-medium">Total Recaudado</p>
-                <h3 className="text-2xl font-bold text-slate-800">${totalRecaudado.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <h3 className="text-2xl font-bold text-slate-800">${(totalRecaudado || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
                 <p className="text-xs text-green-600 font-medium mt-1">Ingresos verificados</p>
             </div>
         </div>
@@ -107,7 +107,7 @@ export const Dashboard: React.FC = () => {
                             <td className="px-6 py-4 font-medium text-gray-900">{p.nombreRepresentante}</td>
                             <td className="px-6 py-4">{p.metodoPago}</td>
                             <td className="px-6 py-4 font-mono text-xs">{p.referencia}</td>
-                            <td className="px-6 py-4 text-right font-bold">${p.monto.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-bold">${(p.monto || 0).toFixed(2)}</td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`px-2 py-1 rounded-full text-xs ${
                                     p.estado === EstadoPago.VERIFICADO 

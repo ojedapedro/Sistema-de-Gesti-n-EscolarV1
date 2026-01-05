@@ -160,9 +160,9 @@ export const Verificacion: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="font-bold text-gray-900">${pago.monto.toFixed(2)}</div>
+                      <div className="font-bold text-gray-900">${(pago.monto || 0).toFixed(2)}</div>
                       {pago.montoBolivares && (
-                        <div className="text-xs text-gray-500">Bs. {pago.montoBolivares.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">Bs. {(pago.montoBolivares || 0).toFixed(2)}</div>
                       )}
                     </td>
                     <td className="px-6 py-4">

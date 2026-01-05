@@ -19,7 +19,7 @@ export const Configuracion: React.FC = () => {
   const cargarDatos = async () => {
     try {
       const config = await db.getConfig();
-      setTasa(config.tasaCambio.toString());
+      setTasa((config.tasaCambio || 0).toString());
       setLastUpdate(new Date(config.fechaActualizacion).toLocaleString());
 
       const dataNiveles = await db.getNiveles();
@@ -155,7 +155,7 @@ export const Configuracion: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {niveles.map((nivel, index) => {
-                  const precioBs = (nivel.precio * (parseFloat(tasa) || 0)).toFixed(2);
+                  const precioBs = ((nivel.precio || 0) * (parseFloat(tasa) || 0)).toFixed(2);
                   return (
                     <tr key={nivel.nivel}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
