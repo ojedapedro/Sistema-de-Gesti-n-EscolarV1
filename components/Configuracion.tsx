@@ -34,6 +34,7 @@ export const Configuracion: React.FC = () => {
 
     } catch (e) {
       console.error(e);
+      setMensaje({ type: 'error', text: 'Error cargando datos iniciales.' });
     }
   };
 
@@ -68,6 +69,21 @@ export const Configuracion: React.FC = () => {
     setNiveles(nuevos);
   };
 
+  const handlePrecioBsChange = (index: number, valBs: string) => {
+    const rate = parseFloat(tasa);
+    if (!rate || rate <= 0) return;
+
+    const bs = parseFloat(valBs);
+    const nuevos = [...niveles];
+    if (!isNaN(bs)) {
+      // Calcular USD basado en BS y Tasa
+      nuevos[index].precio = parseFloat((bs / rate).toFixed(2));
+    } else {
+      nuevos[index].precio = 0;
+    }
+    setNiveles(nuevos);
+  };
+
   const guardarPrecios = async () => {
     setLoadingPrecios(true);
     try {
@@ -75,7 +91,8 @@ export const Configuracion: React.FC = () => {
       setMensaje({ type: 'success', text: 'Lista de precios actualizada correctamente.' });
       setTimeout(() => setMensaje(null), 3000);
     } catch (e) {
-      setMensaje({ type: 'error', text: 'Error guardando precios.' });
+      console.error(e);
+      setMensaje({ type: 'error', text: 'Error guardando precios en la base de datos.' });
     } finally {
       setLoadingPrecios(false);
     }
@@ -124,7 +141,7 @@ export const Configuracion: React.FC = () => {
              <DollarSign size={20} /> Costos de Mensualidad por Nivel
           </h3>
           <p className="text-sm text-gray-500 mb-4">
-            Establezca el precio base en Dólares ($). El precio en Bolívares se calcula automáticamente según la tasa actual (Bs. {tasa}).
+            Puede editar el precio en Dólares ($) o en Bolívares (Bs). El sistema guardará el valor base en Dólares.
           </p>
 
           <div className="overflow-hidden rounded-lg border border-gray-200">
@@ -132,35 +149,49 @@ export const Configuracion: React.FC = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nivel Educativo</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Base ($)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estimado (Bs)</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio ($)</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio (Bs)</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {niveles.map((nivel, index) => (
-                  <tr key={nivel.nivel}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {nivel.nivel}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="relative rounded-md shadow-sm max-w-[150px]">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                          <span className="text-gray-500 sm:text-sm">$</span>
+                {niveles.map((nivel, index) => {
+                  const precioBs = (nivel.precio * (parseFloat(tasa) || 0)).toFixed(2);
+                  return (
+                    <tr key={nivel.nivel}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {nivel.nivel}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="relative rounded-md shadow-sm max-w-[150px]">
+                          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <span className="text-gray-500 sm:text-sm">$</span>
+                          </div>
+                          <input
+                            type="number"
+                            value={nivel.precio}
+                            onChange={(e) => handlePrecioChange(index, e.target.value)}
+                            className="block w-full rounded-md border-gray-300 pl-7 py-1 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border"
+                            placeholder="0.00"
+                          />
                         </div>
-                        <input
-                          type="number"
-                          value={nivel.precio}
-                          onChange={(e) => handlePrecioChange(index, e.target.value)}
-                          className="block w-full rounded-md border-gray-300 pl-7 py-1 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                      Bs. {(nivel.precio * (parseFloat(tasa) || 0)).toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="relative rounded-md shadow-sm max-w-[150px]">
+                           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <span className="text-gray-500 sm:text-sm font-bold">Bs.</span>
+                          </div>
+                          <input
+                            type="number"
+                            value={precioBs}
+                            onChange={(e) => handlePrecioBsChange(index, e.target.value)}
+                            className="block w-full rounded-md border-gray-300 pl-9 py-1 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border bg-slate-50"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

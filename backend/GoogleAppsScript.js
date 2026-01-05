@@ -29,11 +29,16 @@ function doGet(e) {
         result = [];
       } else {
         const rows = sheetLevels.getDataRange().getValues();
-        rows.shift(); // Eliminar headers
-        result = rows.map(row => ({
-          nivel: String(row[0]),
-          precio: Number(row[1])
-        }));
+        // Si hay data (más de 1 fila de header)
+        if (rows.length > 1) {
+          rows.shift(); // Eliminar headers
+          result = rows.map(row => ({
+            nivel: String(row[0]),
+            precio: Number(row[1])
+          }));
+        } else {
+          result = [];
+        }
       }
     }
     else if (action === 'getRepresentantes') {
@@ -112,7 +117,14 @@ function doGet(e) {
 
 function doPost(e) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const body = JSON.parse(e.postData.contents);
+  // Parsear con seguridad
+  let body = {};
+  try {
+     body = JSON.parse(e.postData.contents);
+  } catch(e) {
+     return errorResponse("Invalid JSON");
+  }
+
   const action = body.action;
   const data = body.data;
   
@@ -129,21 +141,23 @@ function doPost(e) {
     }
 
     if (action === 'saveNiveles') {
+      if (!Array.isArray(data)) return errorResponse("Data debe ser un array");
+
       let sheet = ss.getSheetByName('Levels');
       if (!sheet) {
         sheet = ss.insertSheet('Levels');
         sheet.appendRow(['Level', 'PriceUSD']);
       }
       
-      // Limpiar datos existentes (menos header)
+      // Asegurar que los datos sean primitivos (Strings, Numbers)
+      const rows = data.map(item => [String(item.nivel), Number(item.precio) || 0]);
+      
+      // Limpiar contenido existente (pero dejar header)
       const lastRow = sheet.getLastRow();
       if (lastRow > 1) {
         sheet.getRange(2, 1, lastRow - 1, 2).clearContent();
       }
       
-      // Escribir nuevos datos
-      // data debe ser un array de objetos {nivel, precio}
-      const rows = data.map(item => [item.nivel, item.precio]);
       if (rows.length > 0) {
         sheet.getRange(2, 1, rows.length, 2).setValues(rows);
       }
@@ -233,16 +247,23 @@ function doPost(e) {
       }
     }
     
+    return errorResponse("Action not found");
+
   } catch (err) {
     return errorResponse(err.toString());
   }
 }
 
 function formatDate(date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  try {
+    if(!date) return '';
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  } catch(e) {
+    return '';
+  }
 }
 
 function success(msg) {
@@ -265,10 +286,6 @@ function setup() {
   if (!ss.getSheetByName('Levels')) {
     const s = ss.insertSheet('Levels');
     s.appendRow(['Level', 'PriceUSD']);
-    // Valores por defecto
     s.appendRow(['Maternal', 120]);
-    s.appendRow(['Pre-escolar 1er Nivel', 100]);
-    s.appendRow(['Primaria 1er Grado', 110]);
-    s.appendRow(['Secundaria 1er Año', 130]);
   }
 }

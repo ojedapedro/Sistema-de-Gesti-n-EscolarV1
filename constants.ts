@@ -1,7 +1,7 @@
 import { NivelEducativo } from './types';
 
 // IMPORTANTE: REEMPLAZA ESTA URL CON LA DE TU APP SCRIPT PUBLICADA
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyw07fInTlMuY0avxGv7971vrgJB18OEHT8Uh5hzBkTfz5UrMcqoRqALJtTvET3eHJg/exec"; 
+export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwb7uZZfw5hxWpwwQOmG7-5MpNyOV1wtMS0M8m1fux-XxfoRuTTyM28710_DwEC6Sp5/exec"; 
 
 export const MENSUALIDADES: Record<NivelEducativo, number> = {
   [NivelEducativo.MATERNAL]: 120,

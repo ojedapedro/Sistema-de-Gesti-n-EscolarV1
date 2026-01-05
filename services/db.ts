@@ -11,19 +11,28 @@ class DatabaseService {
     }
 
     try {
+      let response;
       if (method === 'GET') {
         const url = `${GOOGLE_SCRIPT_URL}?action=${action}`;
-        const response = await fetch(url);
-        return await response.json();
+        response = await fetch(url);
       } else {
         // Google Apps Script requiere text/plain para evitar CORS preflight complex
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        response = await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           body: JSON.stringify({ action, data: params }),
           headers: { "Content-Type": "text/plain;charset=utf-8" },
         });
-        return await response.json();
       }
+
+      const json = await response.json();
+      
+      // Verificar si el backend devolvió un error explícito
+      if (json && json.status === 'error') {
+        throw new Error(json.message || 'Error desconocido del servidor');
+      }
+
+      return json;
+
     } catch (error) {
       console.error("API Error:", error);
       throw error;
