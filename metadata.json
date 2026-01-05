@@ -1,0 +1,5 @@
+{
+  "name": "Sistema de Gestión Escolar - AdminPro",
+  "description": "Sistema administrativo escolar para gestión de inscripciones, pagos, verificación de transacciones y reportes financieros.",
+  "requestFramePermissions": []
+}
