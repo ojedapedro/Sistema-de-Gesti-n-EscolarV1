@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { NivelEducativo, Representante, Alumno, NivelConfig, MetodoPago, RegistroPago, EstadoPago } from '../types';
-import { Plus, Save, User, DollarSign, CheckCircle, Loader2, CreditCard } from 'lucide-react';
-import { MENSUALIDADES, REQUIERE_VERIFICACION } from '../constants';
+import { Plus, Save, User, DollarSign, CheckCircle, Loader2, CreditCard, Info } from 'lucide-react';
+import { MENSUALIDADES, REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
 
 export const RegistroAlumno: React.FC = () => {
   // Datos Representante
@@ -25,7 +25,7 @@ export const RegistroAlumno: React.FC = () => {
   const [montoInicial, setMontoInicial] = useState('');
   const [metodoPago, setMetodoPago] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
   const [referenciaPago, setReferenciaPago] = useState('');
-  const [observacionPago, setObservacionPago] = useState('Inscripción / Pago Inicial');
+  const [observacionPago, setObservacionPago] = useState(`Inscripción ${ANIO_ESCOLAR_ACTUAL}`);
 
   // Configuración
   const [preciosNiveles, setPreciosNiveles] = useState<NivelConfig[]>([]);
@@ -65,7 +65,7 @@ export const RegistroAlumno: React.FC = () => {
         nombres: nombreAlu,
         apellidos: apellidoAlu,
         nivel,
-        seccion,
+        seccion: seccion.toUpperCase(),
         mensualidad: obtenerPrecio(nivel)
       }
     ]);
@@ -108,14 +108,19 @@ export const RegistroAlumno: React.FC = () => {
 
       await db.saveRepresentante(nuevoRepresentante);
 
+      let mensajeExito = `¡Familia registrada! Matrícula: ${matricula}.`;
+
       // 2. Guardar Pago Inicial (si aplica)
       if (incluirPago) {
         const montoNum = parseFloat(montoInicial);
         const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodoPago);
         
         // Determinar si es pago en Bs para guardar el histórico
-        const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS].includes(metodoPago);
+        const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(metodoPago);
         const montoBs = esPagoBs ? (montoNum * tasaCambio) : undefined;
+        
+        // Agregar matrícula a la observación para rastreo en Libro Contable
+        const observacionFinal = `${observacionPago} - Mat: ${matricula}`;
 
         const nuevoPago: RegistroPago = {
           id: crypto.randomUUID(),
@@ -126,25 +131,31 @@ export const RegistroAlumno: React.FC = () => {
           nombreRepresentante: nombreCompletoRep,
           matricula: matricula,
           nivel: alumnos.map(a => a.nivel).join(', '),
-          tipoPago: 'Abono',
+          tipoPago: 'Abono', // Usamos Abono para que sume al saldo general
           metodoPago: metodoPago,
           referencia: referenciaPago,
           monto: montoNum, // Siempre en USD base
           montoBolivares: montoBs,
           tasaCambioAplicada: esPagoBs ? tasaCambio : undefined,
-          observaciones: observacionPago,
+          observaciones: observacionFinal,
           estado: requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO
         };
 
         await db.savePago(nuevoPago);
+
+        if (requiereVerificacion) {
+          mensajeExito += " El pago electrónico ha sido enviado a VERIFICACIÓN.";
+        } else {
+          mensajeExito += " El pago ha sido registrado en el LIBRO CONTABLE.";
+        }
       }
 
-      setMensaje({ type: 'success', text: `¡Registro Completo! Familia registrada con matrícula: ${matricula}` });
+      setMensaje({ type: 'success', text: mensajeExito });
       
       // Limpiar formulario
       setCedula(''); setNombreRep(''); setApellidoRep(''); setTelefono(''); setCorreo(''); setDireccion('');
       setAlumnos([]);
-      setIncluirPago(false); setMontoInicial(''); setReferenciaPago('');
+      setIncluirPago(false); setMontoInicial(''); setReferenciaPago(''); setObservacionPago(`Inscripción ${ANIO_ESCOLAR_ACTUAL}`);
 
     } catch (e) {
       console.error(e);
@@ -265,6 +276,14 @@ export const RegistroAlumno: React.FC = () => {
 
          {incluirPago && (
             <div className="bg-green-50 p-6 rounded-xl border border-green-100 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex items-start gap-2 mb-4 p-2 bg-white/50 rounded border border-green-200">
+                    <Info size={16} className="text-green-600 mt-0.5" />
+                    <p className="text-xs text-green-800">
+                      <strong>Nota:</strong> Los pagos en Efectivo se registran automáticamente en el <u>Libro Contable</u>. 
+                      Los pagos electrónicos (Móvil, Transferencia, Zelle) deben ser validados primero en la sección "Verificación Pagos".
+                    </p>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Monto a Pagar (USD)</label>
@@ -312,6 +331,7 @@ export const RegistroAlumno: React.FC = () => {
                           onChange={(e) => setObservacionPago(e.target.value)} 
                           className="w-full border border-gray-300 rounded-md p-2"
                         />
+                        <p className="text-[10px] text-gray-400 mt-1">* Se agregará la matrícula automáticamente.</p>
                     </div>
                 </div>
             </div>
