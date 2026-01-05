@@ -1,4 +1,4 @@
-import { Representante, RegistroPago, EstadoPago, SystemConfig } from '../types';
+import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
 class DatabaseService {
@@ -45,6 +45,21 @@ class DatabaseService {
     await this.fetchAPI('saveConfig', config, 'POST');
   }
 
+  // --- Niveles y Precios ---
+
+  async getNiveles(): Promise<NivelConfig[]> {
+    try {
+      const data = await this.fetchAPI('getNiveles');
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async saveNiveles(niveles: NivelConfig[]): Promise<void> {
+    await this.fetchAPI('saveNiveles', niveles, 'POST');
+  }
+
   // --- Representantes ---
 
   async getRepresentantes(): Promise<Representante[]> {
@@ -87,9 +102,16 @@ class DatabaseService {
     const rep = await this.getRepresentanteByCedula(cedula);
     if (!rep) return 0;
 
+    // Obtener precios actualizados de la BD
+    const nivelesConfig = await this.getNiveles();
+    
     let deudaTotalEsperada = 0;
+    
     rep.alumnos.forEach(alumno => {
-       deudaTotalEsperada += MENSUALIDADES[alumno.nivel];
+       // Buscar precio en BD, si no existe usar constante local como fallback
+       const configNivel = nivelesConfig.find(n => n.nivel === alumno.nivel);
+       const precioMensual = configNivel ? configNivel.precio : (MENSUALIDADES[alumno.nivel] || 0);
+       deudaTotalEsperada += precioMensual;
     });
 
     const pagos = await this.getPagos();

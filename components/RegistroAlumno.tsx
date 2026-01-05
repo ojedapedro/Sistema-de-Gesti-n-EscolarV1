@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { NivelEducativo, Representante, Alumno } from '../types';
+import { NivelEducativo, Representante, Alumno, NivelConfig } from '../types';
 import { Plus, Save, User, Mail, MapPin, Phone, Loader2 } from 'lucide-react';
 import { MENSUALIDADES } from '../constants';
 
@@ -18,8 +18,20 @@ export const RegistroAlumno: React.FC = () => {
   const [nivel, setNivel] = useState<NivelEducativo>(NivelEducativo.MATERNAL);
   const [seccion, setSeccion] = useState('A');
 
+  const [preciosNiveles, setPreciosNiveles] = useState<NivelConfig[]>([]);
+
   const [mensaje, setMensaje] = useState<{type: 'success' | 'error', text: string} | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Cargar precios al iniciar
+    db.getNiveles().then(setPreciosNiveles);
+  }, []);
+
+  const obtenerPrecio = (niv: NivelEducativo) => {
+    const config = preciosNiveles.find(n => n.nivel === niv);
+    return config ? config.precio : (MENSUALIDADES[niv] || 0);
+  };
 
   const handleAgregarAlumno = () => {
     if (!nombreAlu || !apellidoAlu) return;
@@ -31,7 +43,7 @@ export const RegistroAlumno: React.FC = () => {
         apellidos: apellidoAlu,
         nivel,
         seccion,
-        mensualidad: MENSUALIDADES[nivel]
+        mensualidad: obtenerPrecio(nivel)
       }
     ]);
 
@@ -122,9 +134,14 @@ export const RegistroAlumno: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <input placeholder="Nombres" value={nombreAlu} onChange={(e) => setNombreAlu(e.target.value)} className="w-full border border-gray-300 rounded-md p-2" />
           <input placeholder="Apellidos" value={apellidoAlu} onChange={(e) => setApellidoAlu(e.target.value)} className="w-full border border-gray-300 rounded-md p-2" />
-          <select value={nivel} onChange={(e) => setNivel(e.target.value as NivelEducativo)} className="w-full border border-gray-300 rounded-md p-2">
-              {Object.values(NivelEducativo).map((niv) => <option key={niv} value={niv}>{niv}</option>)}
-          </select>
+          
+          <div>
+            <select value={nivel} onChange={(e) => setNivel(e.target.value as NivelEducativo)} className="w-full border border-gray-300 rounded-md p-2">
+                {Object.values(NivelEducativo).map((niv) => <option key={niv} value={niv}>{niv}</option>)}
+            </select>
+            <p className="text-xs text-indigo-600 mt-1 text-right">Costo: ${obtenerPrecio(nivel)}</p>
+          </div>
+
           <input placeholder="Sección" value={seccion} onChange={(e) => setSeccion(e.target.value)} className="w-full border border-gray-300 rounded-md p-2" />
         </div>
         <button onClick={handleAgregarAlumno} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700 text-sm">
@@ -139,6 +156,7 @@ export const RegistroAlumno: React.FC = () => {
             {alumnos.map((a, i) => (
               <li key={i} className="flex justify-between items-center bg-indigo-50 p-3 rounded border border-indigo-100">
                 <span>{a.nombres} {a.apellidos} - {a.nivel}</span>
+                <span className="font-bold text-gray-600">${a.mensualidad}</span>
               </li>
             ))}
           </ul>

@@ -35,6 +35,12 @@ export enum EstadoPago {
   RECHAZADO = 'Rechazado',
 }
 
+// Configuración de Precio por Nivel
+export interface NivelConfig {
+  nivel: string;
+  precio: number;
+}
+
 // Configuración del Sistema
 export interface SystemConfig {
   tasaCambio: number;

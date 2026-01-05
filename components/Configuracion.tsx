@@ -1,20 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { Settings, Save, RefreshCw, Loader2 } from 'lucide-react';
-import { SystemConfig } from '../types';
+import { Settings, Save, RefreshCw, Loader2, DollarSign, Calculator } from 'lucide-react';
+import { SystemConfig, NivelConfig, NivelEducativo } from '../types';
 
 export const Configuracion: React.FC = () => {
   const [tasa, setTasa] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [niveles, setNiveles] = useState<NivelConfig[]>([]);
+  
   const [mensaje, setMensaje] = useState<{type: 'success' | 'error', text: string} | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingPrecios, setLoadingPrecios] = useState(false);
 
   useEffect(() => {
-    db.getConfig().then(config => {
+    cargarDatos();
+  }, []);
+
+  const cargarDatos = async () => {
+    try {
+      const config = await db.getConfig();
       setTasa(config.tasaCambio.toString());
       setLastUpdate(new Date(config.fechaActualizacion).toLocaleString());
-    });
-  }, []);
+
+      const dataNiveles = await db.getNiveles();
+      
+      // Asegurarnos de que todos los niveles del Enum estén presentes
+      const todosLosNiveles = Object.values(NivelEducativo).map(nombreNivel => {
+        const existente = dataNiveles.find(n => n.nivel === nombreNivel);
+        return existente || { nivel: nombreNivel, precio: 0 };
+      });
+      
+      setNiveles(todosLosNiveles);
+
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const guardarConfiguracion = async () => {
     const nuevaTasa = parseFloat(tasa);
@@ -23,7 +44,7 @@ export const Configuracion: React.FC = () => {
       return;
     }
 
-    setLoading(true);
+    setLoadingConfig(true);
     const newConfig: SystemConfig = {
       tasaCambio: nuevaTasa,
       fechaActualizacion: new Date().toISOString()
@@ -37,12 +58,31 @@ export const Configuracion: React.FC = () => {
     } catch (e) {
       setMensaje({ type: 'error', text: 'Error guardando configuración.' });
     } finally {
-      setLoading(false);
+      setLoadingConfig(false);
+    }
+  };
+
+  const handlePrecioChange = (index: number, val: string) => {
+    const nuevos = [...niveles];
+    nuevos[index].precio = parseFloat(val) || 0;
+    setNiveles(nuevos);
+  };
+
+  const guardarPrecios = async () => {
+    setLoadingPrecios(true);
+    try {
+      await db.saveNiveles(niveles);
+      setMensaje({ type: 'success', text: 'Lista de precios actualizada correctamente.' });
+      setTimeout(() => setMensaje(null), 3000);
+    } catch (e) {
+      setMensaje({ type: 'error', text: 'Error guardando precios.' });
+    } finally {
+      setLoadingPrecios(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto space-y-8">
       <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
         <h2 className="text-2xl font-bold mb-6 text-slate-800 flex items-center gap-2">
           <Settings className="text-indigo-600" /> Configuración del Sistema
@@ -54,13 +94,15 @@ export const Configuracion: React.FC = () => {
           </div>
         )}
 
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Parámetros Financieros</h3>
+        <div className="mb-8 border-b pb-8">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+             <RefreshCw size={20} /> Parámetros Financieros (Tasa del día)
+          </h3>
           
           <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
             <label className="block text-sm font-medium text-gray-700 mb-2">Tasa de Cambio (Bs / $)</label>
             <div className="flex items-center gap-4">
-              <div className="relative flex-1">
+              <div className="relative flex-1 max-w-xs">
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-bold">Bs.</span>
                 <input 
                   type="number" step="0.01" value={tasa} onChange={(e) => setTasa(e.target.value)}
@@ -68,14 +110,70 @@ export const Configuracion: React.FC = () => {
                   placeholder="0.00"
                 />
               </div>
-              <button onClick={guardarConfiguracion} disabled={loading} className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2 min-w-[120px] justify-center">
-                {loading ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-                {loading ? '...' : 'Guardar'}
+              <button onClick={guardarConfiguracion} disabled={loadingConfig} className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 font-medium flex items-center gap-2 min-w-[120px] justify-center">
+                {loadingConfig ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                {loadingConfig ? '...' : 'Guardar Tasa'}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-              <RefreshCw size={12} /> Última actualización: {lastUpdate}
-            </p>
+            <p className="text-xs text-gray-500 mt-2">Última actualización: {lastUpdate}</p>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+             <DollarSign size={20} /> Costos de Mensualidad por Nivel
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Establezca el precio base en Dólares ($). El precio en Bolívares se calcula automáticamente según la tasa actual (Bs. {tasa}).
+          </p>
+
+          <div className="overflow-hidden rounded-lg border border-gray-200">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nivel Educativo</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Base ($)</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estimado (Bs)</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {niveles.map((nivel, index) => (
+                  <tr key={nivel.nivel}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {nivel.nivel}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="relative rounded-md shadow-sm max-w-[150px]">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                          <span className="text-gray-500 sm:text-sm">$</span>
+                        </div>
+                        <input
+                          type="number"
+                          value={nivel.precio}
+                          onChange={(e) => handlePrecioChange(index, e.target.value)}
+                          className="block w-full rounded-md border-gray-300 pl-7 py-1 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                      Bs. {(nivel.precio * (parseFloat(tasa) || 0)).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="mt-4 flex justify-end">
+            <button 
+              onClick={guardarPrecios}
+              disabled={loadingPrecios}
+              className="bg-slate-800 text-white px-6 py-3 rounded-lg hover:bg-slate-700 font-medium flex items-center gap-2"
+            >
+              {loadingPrecios ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+              {loadingPrecios ? 'Guardando...' : 'Guardar Precios'}
+            </button>
           </div>
         </div>
       </div>
