@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <script>
-      // Polyfill para process.env
+      // Polyfill esencial para evitar errores con librerías que buscan process.env
       window.process = window.process || { env: { API_KEY: '' } };
     </script>
 
@@ -16,8 +16,9 @@
 {
   "imports": {
     "react": "https://esm.sh/react@18.3.1",
-    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
     "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
     "lucide-react": "https://esm.sh/lucide-react@0.263.1?external=react",
     "@google/genai": "https://esm.sh/@google/genai@0.1.1",
     "jspdf": "https://esm.sh/jspdf@2.5.1",
