@@ -52,21 +52,21 @@ export const Verificacion: React.FC = () => {
     switch (accion) {
       case 'APROBAR':
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = "Pago aprobado y enviado al Libro Contable.";
+        mensaje = `¿Está seguro de APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\nEl pago será registrado en el Libro Contable.`;
         break;
       case 'RECHAZAR':
         nuevoEstado = EstadoPago.RECHAZADO;
-        mensaje = "Pago rechazado. Se ha movido al historial de Rechazados.";
+        mensaje = `¿Está seguro de RECHAZAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n\nEl pago será movido al historial de Rechazados.`;
         break;
       case 'RECUPERAR': 
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = "Pago rectificado y aprobado.";
+        mensaje = `¿Está seguro de RECUPERAR y APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n\nEl pago será marcado como verificado.`;
         break;
       default:
         return;
     }
 
-    if (window.confirm(`¿Está seguro? \n${mensaje}`)) {
+    if (window.confirm(mensaje)) {
       setLoading(true);
       try {
         await db.updateEstadoPago(pago.id, pago.referencia, pago.cedulaRepresentante, nuevoEstado);
@@ -170,12 +170,12 @@ export const Verificacion: React.FC = () => {
                       <div className="flex justify-center gap-3">
                         {activeTab === 'PENDIENTE' && (
                           <>
-                            <button onClick={() => procesarPago(pago, 'APROBAR')} className="p-2 bg-green-50 rounded-full hover:bg-green-100 text-green-600"><Check size={20} /></button>
-                            <button onClick={() => procesarPago(pago, 'RECHAZAR')} className="p-2 bg-red-50 rounded-full hover:bg-red-100 text-red-600"><X size={20} /></button>
+                            <button onClick={() => procesarPago(pago, 'APROBAR')} className="p-2 bg-green-50 rounded-full hover:bg-green-100 text-green-600" title="Aprobar Pago"><Check size={20} /></button>
+                            <button onClick={() => procesarPago(pago, 'RECHAZAR')} className="p-2 bg-red-50 rounded-full hover:bg-red-100 text-red-600" title="Rechazar Pago"><X size={20} /></button>
                           </>
                         )}
                         {activeTab === 'RECHAZADO' && (
-                           <button onClick={() => procesarPago(pago, 'RECUPERAR')} className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded">Recuperar</button>
+                           <button onClick={() => procesarPago(pago, 'RECUPERAR')} className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded border border-gray-300 hover:bg-gray-200">Recuperar</button>
                         )}
                       </div>
                     </td>
