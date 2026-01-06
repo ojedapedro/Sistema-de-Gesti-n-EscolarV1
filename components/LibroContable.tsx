@@ -3,7 +3,7 @@ import { db } from '../services/db';
 import { RegistroPago, EstadoPago } from '../types';
 import { BookOpen, Download, TrendingUp, Calendar, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export const LibroContable: React.FC = () => {
   const [pagosVerificados, setPagosVerificados] = useState<RegistroPago[]>([]);
@@ -38,29 +38,37 @@ export const LibroContable: React.FC = () => {
   const totalBs = pagosVerificados.reduce((acc, p) => acc + (Number(p.montoBolivares) || 0), 0);
 
   const descargarReporteLibro = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text('Libro de Pagos Verificados (Ingresos)', 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generado: ${new Date().toLocaleDateString()}`, 14, 28);
-    
-    const tableData = pagosVerificados.map(p => [
-        p.fechaPago,
-        p.nombreRepresentante,
-        p.metodoPago,
-        p.referencia,
-        `$${(p.monto || 0).toFixed(2)}`,
-        (p.montoBolivares && p.montoBolivares > 0) ? `Bs ${(p.montoBolivares).toFixed(2)}` : '-'
-    ]);
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Libro de Pagos Verificados (Ingresos)', 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Generado: ${new Date().toLocaleDateString()}`, 14, 28);
+      
+      const tableData = pagosVerificados.map(p => [
+          p.fechaPago,
+          p.nombreRepresentante,
+          p.metodoPago,
+          p.referencia,
+          `$${(p.monto || 0).toFixed(2)}`,
+          (p.montoBolivares && p.montoBolivares > 0) ? `Bs ${(p.montoBolivares).toFixed(2)}` : '-'
+      ]);
 
-    (doc as any).autoTable({
-        startY: 35,
-        head: [['Fecha', 'Representante', 'Método', 'Referencia', 'Monto USD', 'Monto Bs']],
-        body: tableData,
-        foot: [[ 'TOTALES', '', '', '', `$${totalUSD.toFixed(2)}`, `Bs ${totalBs.toFixed(2)}` ]]
-    });
+      autoTable(doc, {
+          startY: 35,
+          head: [['Fecha', 'Representante', 'Método', 'Referencia', 'Monto USD', 'Monto Bs']],
+          body: tableData,
+          foot: [[ 'TOTALES', '', '', '', `$${totalUSD.toFixed(2)}`, `Bs ${totalBs.toFixed(2)}` ]],
+          theme: 'grid',
+          headStyles: { fillColor: [63, 81, 181] }, // Color Indigo
+          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' }
+      });
 
-    doc.save('libro_contable.pdf');
+      doc.save(`libro_contable_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generando PDF:", error);
+      alert("Hubo un error al generar el archivo PDF. Revise la consola para más detalles.");
+    }
   };
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>;
