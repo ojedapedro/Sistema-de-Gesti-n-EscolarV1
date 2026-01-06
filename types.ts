@@ -30,7 +30,7 @@ export enum MetodoPago {
 }
 
 export enum EstadoPago {
-  PENDIENTE_VERIFICACION = 'Pendiente Verificación',
+  PENDIENTE_VERIFICACION = 'Pendiente',
   VERIFICADO = 'Verificado',
   RECHAZADO = 'Rechazado',
 }
@@ -69,24 +69,26 @@ export interface Representante {
   alumnos: Alumno[];
 }
 
-// Estructura del Registro de Pago (Base de datos unificada)
+// Estructura del Registro de Pago (Adaptada a la hoja de cálculo)
 export interface RegistroPago {
-  id: string;
-  timestamp: string; // ISO String
-  fechaRegistro: string; // YYYY-MM-DD
-  fechaPago: string; // YYYY-MM-DD
-  cedulaRepresentante: string;
-  nombreRepresentante: string;
-  nivel: string; // Nivel del alumno (o concatenado si paga por varios)
-  matricula: string;
-  tipoPago: 'Abono' | 'Total';
-  metodoPago: MetodoPago;
-  referencia: string;
-  monto: number; // Siempre almacenado en USD base
-  tasaCambioAplicada?: number; // Tasa usada en el momento del pago
-  montoBolivares?: number; // Monto original en Bs si aplica
-  observaciones: string;
-  estado: EstadoPago;
+  id: string; // Col A
+  timestamp: string; // Col B
+  fechaRegistro: string; // Col C
+  fechaPago: string; // Col D
+  cedulaRepresentante: string; // Col E
+  studentId?: string; // Col F (Nuevo)
+  mes?: string; // Col G (Nuevo)
+  anio?: string; // Col H (Nuevo)
+  metodoPago: MetodoPago; // Col I
+  referencia: string; // Col J
+  monto: number; // Col K (USD)
+  montoBolivares?: number; // Col L (Bs)
+  estado: EstadoPago; // Col M (Status)
+  observaciones: string; // Col N
+  nombreRepresentante: string; // Col O
+  matricula: string; // Col P
+  formaPago: string; // Col Q (paymentForm) - Antes tipoPago
+  tasaCambioAplicada?: number; // No guardado explícitamente en tabla principal
 }
 
 export interface DeudaInfo {

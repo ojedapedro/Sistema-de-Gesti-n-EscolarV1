@@ -1,4 +1,4 @@
-// ID de la Hoja de Cálculo (Extraído del link proporcionado)
+// ID de la Hoja de Cálculo
 const SPREADSHEET_ID = '13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs';
 
 function doGet(e) {
@@ -9,283 +9,250 @@ function doGet(e) {
   
   try {
     if (action === 'getConfig') {
-      // 1. Obtener Configuración General (Tasa)
-      let sheetConfig = ss.getSheetByName('Config');
-      if (!sheetConfig) {
-        result = { tasaCambio: 60, fechaActualizacion: new Date().toISOString() };
+      let sheet = ss.getSheetByName('Config');
+      if (!sheet) {
+        result = { tasaCambio: 0, fechaActualizacion: new Date().toISOString() };
       } else {
-        const data = sheetConfig.getDataRange().getValues();
+        const data = sheet.getDataRange().getValues();
         result = {
-          tasaCambio: data[1] ? Number(data[1][0]) : 0,
-          fechaActualizacion: data[1] ? data[1][1] : new Date().toISOString()
+          tasaCambio: data.length > 1 ? Number(data[1][0]) : 0,
+          fechaActualizacion: data.length > 1 ? data[1][1] : new Date().toISOString()
         };
       }
     }
     else if (action === 'getNiveles') {
-      // 2. Obtener Precios por Nivel
-      let sheetLevels = ss.getSheetByName('Levels');
-      if (!sheetLevels) {
-        // Retornar vacío si no existe, el frontend manejará defaults
-        result = [];
-      } else {
-        const rows = sheetLevels.getDataRange().getValues();
-        // Si hay data (más de 1 fila de header)
-        if (rows.length > 1) {
-          rows.shift(); // Eliminar headers
-          result = rows.map(row => ({
-            nivel: String(row[0]),
-            precio: Number(row[1])
-          }));
-        } else {
-          result = [];
-        }
+      let sheet = ss.getSheetByName('Levels');
+      if (!sheet) result = [];
+      else {
+        const rows = sheet.getDataRange().getValues();
+        rows.shift(); // Quitar header
+        result = rows.map(row => ({ nivel: String(row[0]), precio: Number(row[1]) }));
       }
     }
     else if (action === 'getRepresentantes') {
       const sheetRep = ss.getSheetByName('Representatives');
-      const dataRep = sheetRep.getDataRange().getValues();
-      dataRep.shift(); 
-      
       const sheetStu = ss.getSheetByName('Students');
-      const dataStu = sheetStu.getDataRange().getValues();
-      dataStu.shift(); 
       
-      const studentsMap = {};
-      dataStu.forEach(row => {
-        const repCedula = String(row[1]);
-        if (!studentsMap[repCedula]) studentsMap[repCedula] = [];
+      if (!sheetRep || !sheetStu) {
+        result = [];
+      } else {
+        const dataRep = sheetRep.getDataRange().getValues();
+        dataRep.shift();
         
-        studentsMap[repCedula].push({
-          id: String(row[0]),
-          nombres: String(row[2]), 
-          apellidos: "",           
-          nivel: row[3],
-          seccion: row[5],
-          mensualidad: 0 
+        const dataStu = sheetStu.getDataRange().getValues();
+        dataStu.shift();
+        
+        const studentsMap = {};
+        dataStu.forEach(row => {
+          const repCedula = String(row[1]);
+          if (!studentsMap[repCedula]) studentsMap[repCedula] = [];
+          studentsMap[repCedula].push({
+            id: String(row[0]),
+            nombres: String(row[2]),
+            apellidos: "",
+            nivel: row[3],
+            seccion: row[5],
+            mensualidad: 0
+          });
         });
-      });
-      
-      result = dataRep.map(row => {
-        const cedula = String(row[0]);
-        const fullName = String(row[1]);
-        const nameParts = fullName.split(' ');
         
-        return {
-          cedula: cedula,
-          nombres: nameParts[0] || fullName,
-          apellidos: nameParts.slice(1).join(' ') || "",
-          telefono: row[2],
-          correo: row[3],
-          direccion: row[4],
-          matricula: row[5],
-          alumnos: studentsMap[cedula] || []
-        };
-      }).filter(r => r.cedula && r.cedula !== "");
+        result = dataRep.map(row => {
+          const cedula = String(row[0]);
+          const fullName = String(row[1]);
+          const parts = fullName.split(' ');
+          return {
+            cedula: cedula,
+            nombres: parts[0] || fullName,
+            apellidos: parts.slice(1).join(' ') || "",
+            telefono: String(row[2]),
+            correo: String(row[3]),
+            direccion: String(row[4]),
+            matricula: String(row[5]),
+            alumnos: studentsMap[cedula] || []
+          };
+        }).filter(r => r.cedula);
+      }
     }
     else if (action === 'getPagos') {
       const sheet = ss.getSheetByName('Payments');
-      const rows = sheet.getDataRange().getValues();
-      rows.shift(); 
-      
-      result = rows.map(row => ({
-        id: String(row[0]),
-        timestamp: row[1],
-        fechaRegistro: row[2] ? formatDate(new Date(row[2])) : '', 
-        fechaPago: row[3] ? formatDate(new Date(row[3])) : '',
-        cedulaRepresentante: String(row[4]),
-        nombreRepresentante: "Cargando...", 
-        nivel: "General",
-        matricula: "", 
-        tipoPago: "Abono",
-        metodoPago: row[8],
-        referencia: String(row[9]),
-        monto: Number(row[10]),
-        observaciones: row[12],
-        estado: row[11] || 'Pendiente Verificación',
-        montoBolivares: 0 
-      })).filter(p => p.id && p.id !== "");
+      if (!sheet) {
+        result = [];
+      } else {
+        const rows = sheet.getDataRange().getValues();
+        rows.shift();
+        
+        // Mapeo EXACTO según la imagen proporcionada (Cols A-Q)
+        // A=0, B=1, ... M=12 (Status), N=13, O=14, P=15, Q=16
+        result = rows.map(row => ({
+          id: String(row[0]),                  // A: paymentId
+          timestamp: row[1],                   // B: timestamp
+          fechaRegistro: formatDateStr(row[2]),// C: registrationDate
+          fechaPago: formatDateStr(row[3]),    // D: paymentDate
+          cedulaRepresentante: String(row[4]), // E: representativeCedula
+          studentId: String(row[5] || ''),     // F: studentId
+          mes: String(row[6] || ''),           // G: month
+          anio: String(row[7] || ''),          // H: year
+          metodoPago: row[8],                  // I: paymentMethod
+          referencia: String(row[9]),          // J: reference
+          monto: Number(row[10]),              // K: amount$
+          montoBolivares: Number(row[11] || 0),// L: amountBs
+          estado: row[12],                     // M: status
+          observaciones: String(row[13]),      // N: observations
+          nombreRepresentante: String(row[14]),// O: representativeName
+          matricula: String(row[15]),          // P: matricula
+          formaPago: String(row[16] || '')     // Q: paymentForm
+        }));
+      }
     }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
       
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({error: error.toString()}))
+    return ContentService.createTextOutput(JSON.stringify({status: 'error', message: error.toString()}))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function doPost(e) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  // Parsear con seguridad
   let body = {};
-  try {
-     body = JSON.parse(e.postData.contents);
-  } catch(e) {
-     return errorResponse("Invalid JSON");
-  }
-
+  try { body = JSON.parse(e.postData.contents); } catch(e) { return errorResponse("Invalid JSON"); }
+  
   const action = body.action;
   const data = body.data;
-  
+
   try {
     if (action === 'saveConfig') {
-      let sheet = ss.getSheetByName('Config');
-      if (!sheet) {
-        sheet = ss.insertSheet('Config');
-        sheet.appendRow(['Tasa', 'Fecha']);
-      }
+      let sheet = getOrCreateSheet(ss, 'Config', ['Tasa', 'Fecha']);
       sheet.getRange('A2').setValue(data.tasaCambio);
       sheet.getRange('B2').setValue(data.fechaActualizacion);
       return success('Configuración guardada');
     }
 
     if (action === 'saveNiveles') {
-      if (!Array.isArray(data)) return errorResponse("Data debe ser un array");
+      let sheet = getOrCreateSheet(ss, 'Levels', ['Nivel', 'PrecioUSD']);
+      if(sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow()-1, 2).clearContent();
+      const rows = data.map(d => [d.nivel, d.precio]);
+      if(rows.length > 0) sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+      return success('Niveles guardados');
+    }
 
-      let sheet = ss.getSheetByName('Levels');
-      if (!sheet) {
-        sheet = ss.insertSheet('Levels');
-        sheet.appendRow(['Level', 'PriceUSD']);
-      }
-      
-      // Asegurar que los datos sean primitivos (Strings, Numbers)
-      const rows = data.map(item => [String(item.nivel), Number(item.precio) || 0]);
-      
-      // Limpiar contenido existente (pero dejar header)
-      const lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
-        sheet.getRange(2, 1, lastRow - 1, 2).clearContent();
-      }
-      
-      if (rows.length > 0) {
-        sheet.getRange(2, 1, rows.length, 2).setValues(rows);
-      }
-      
-      return success('Precios actualizados');
-    }
-    
     if (action === 'saveRepresentante') {
-      const sheetRep = ss.getSheetByName('Representatives');
-      const sheetStu = ss.getSheetByName('Students');
-      const fullName = `${data.nombres} ${data.apellidos}`.trim();
+      let sheetRep = getOrCreateSheet(ss, 'Representatives', ['Cedula', 'NombreCompleto', 'Telefono', 'Correo', 'Direccion', 'Matricula']);
+      let sheetStu = getOrCreateSheet(ss, 'Students', ['ID', 'CedulaRep', 'NombreAlumno', 'Nivel', 'Turno', 'Seccion']);
       
+      const nombreCompleto = `${data.nombres} ${data.apellidos}`.trim();
       const reps = sheetRep.getDataRange().getValues();
-      let repRowIndex = -1;
+      let rowIndex = -1;
       for(let i=1; i<reps.length; i++) {
-        if(String(reps[i][0]) === String(data.cedula)) {
-          repRowIndex = i + 1;
-          break;
-        }
+        if(String(reps[i][0]) === String(data.cedula)) { rowIndex = i+1; break; }
       }
       
-      const repData = [data.cedula, fullName, data.telefono, data.correo, data.direccion, data.matricula];
+      const repRow = [data.cedula, nombreCompleto, data.telefono, data.correo, data.direccion, data.matricula];
+      if(rowIndex > 0) sheetRep.getRange(rowIndex, 1, 1, 6).setValues([repRow]);
+      else sheetRep.appendRow(repRow);
       
-      if (repRowIndex > 0) {
-        sheetRep.getRange(repRowIndex, 1, 1, 6).setValues([repData]);
-      } else {
-        sheetRep.appendRow(repData);
+      if(data.alumnos) {
+         data.alumnos.forEach(alu => {
+            const stuId = alu.id || `STU-${Math.floor(Math.random()*100000)}`;
+            sheetStu.appendRow([stuId, data.cedula, `${alu.nombres} ${alu.apellidos}`, alu.nivel, "Mañana", alu.seccion]);
+         });
       }
-      
-      if (data.alumnos && data.alumnos.length > 0) {
-        data.alumnos.forEach(alu => {
-          const stuId = alu.id || `${data.cedula}-${Math.floor(Math.random()*1000)}`;
-          const stuName = `${alu.nombres} ${alu.apellidos}`.trim();
-          sheetStu.appendRow([
-            stuId,
-            data.cedula,
-            stuName,
-            alu.nivel, 
-            "N/A",     
-            alu.seccion
-          ]);
-        });
-      }
-      return success('Familia registrada correctamente');
+      return success('Datos guardados');
     }
-    
+
     if (action === 'savePago') {
-      const sheet = ss.getSheetByName('Payments');
-      const dateObj = new Date(data.fechaPago);
-      const month = dateObj.getMonth() + 1;
-      const year = dateObj.getFullYear();
-      
-      const rowData = [
-        data.id,                     
-        new Date().toISOString(),    
-        data.fechaRegistro,          
-        data.fechaPago,              
-        data.cedulaRepresentante,    
-        "",                          
-        month,                       
-        year,                        
-        data.metodoPago,             
-        data.referencia,             
-        data.monto,                  
-        data.estado,                 
-        data.observaciones           
+      const headers = [
+        'paymentId', 'timestamp', 'registrationDate', 'paymentDate', 
+        'representativeCedula', 'studentId', 'month', 'year', 
+        'paymentMethod', 'reference', 'amount$', 'amountBs', 
+        'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
       ];
-      sheet.appendRow(rowData);
+      let sheet = getOrCreateSheet(ss, 'Payments', headers);
+      
+      const row = [
+        data.id,                     // A
+        new Date().toISOString(),    // B
+        data.fechaRegistro,          // C
+        data.fechaPago,              // D
+        data.cedulaRepresentante,    // E
+        data.studentId || '',        // F
+        data.mes || '',              // G
+        data.anio || '',             // H
+        data.metodoPago,             // I
+        data.referencia,             // J
+        data.monto,                  // K (USD)
+        data.montoBolivares || 0,    // L (Bs)
+        data.estado,                 // M
+        data.observaciones,          // N
+        data.nombreRepresentante,    // O
+        data.matricula,              // P
+        data.formaPago               // Q
+      ];
+      
+      sheet.appendRow(row);
       return success('Pago registrado');
     }
-    
+
     if (action === 'updateEstadoPago') {
-      const sheet = ss.getSheetByName('Payments');
+      let sheet = ss.getSheetByName('Payments');
+      if(!sheet) return errorResponse("No existe hoja Payments");
+      
       const rows = sheet.getDataRange().getValues();
-      let rowIndex = -1;
-      for (let i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]) === String(data.id)) {
-          rowIndex = i + 1;
-          break;
+      for(let i=1; i<rows.length; i++) {
+        if(String(rows[i][0]) === String(data.id)) {
+          // Status está en Columna M, que es la columna 13
+          sheet.getRange(i+1, 13).setValue(data.nuevoEstado);
+          return success('Estado Actualizado');
         }
       }
-      if (rowIndex > 0) {
-        sheet.getRange(rowIndex, 12).setValue(data.nuevoEstado);
-        return success('Estado actualizado');
-      } else {
-        return errorResponse('Pago no encontrado');
-      }
+      return errorResponse('Pago no encontrado para actualizar');
     }
-    
-    return errorResponse("Action not found");
 
-  } catch (err) {
-    return errorResponse(err.toString());
+    return errorResponse("Accion desconocida");
+
+  } catch (e) {
+    return errorResponse(e.toString());
   }
 }
 
-function formatDate(date) {
-  try {
-    if(!date) return '';
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  } catch(e) {
-    return '';
+function getOrCreateSheet(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
   }
+  return sheet;
+}
+
+function formatDateStr(dateVal) {
+  if (!dateVal) return "";
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return String(dateVal);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
 }
 
 function success(msg) {
-  return ContentService.createTextOutput(JSON.stringify({status: 'success', message: msg}))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({status: 'success', message: msg})).setMimeType(ContentService.MimeType.JSON);
 }
-
 function errorResponse(msg) {
-  return ContentService.createTextOutput(JSON.stringify({status: 'error', message: msg}))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({status: 'error', message: msg})).setMimeType(ContentService.MimeType.JSON);
 }
 
 function setup() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  if (!ss.getSheetByName('Config')) {
-    const s = ss.insertSheet('Config');
-    s.appendRow(['Tasa', 'Fecha']);
-    s.appendRow([60, new Date()]);
-  }
-  if (!ss.getSheetByName('Levels')) {
-    const s = ss.insertSheet('Levels');
-    s.appendRow(['Level', 'PriceUSD']);
-    s.appendRow(['Maternal', 120]);
-  }
+  getOrCreateSheet(ss, 'Config', ['Tasa', 'Fecha']);
+  getOrCreateSheet(ss, 'Levels', ['Nivel', 'PrecioUSD']);
+  getOrCreateSheet(ss, 'Representatives', ['Cedula', 'NombreCompleto', 'Telefono', 'Correo', 'Direccion', 'Matricula']);
+  getOrCreateSheet(ss, 'Students', ['ID', 'CedulaRep', 'NombreAlumno', 'Nivel', 'Turno', 'Seccion']);
+  getOrCreateSheet(ss, 'Payments', [
+    'paymentId', 'timestamp', 'registrationDate', 'paymentDate', 
+    'representativeCedula', 'studentId', 'month', 'year', 
+    'paymentMethod', 'reference', 'amount$', 'amountBs', 
+    'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
+  ]);
 }

@@ -92,6 +92,9 @@ export const RegistroAlumno: React.FC = () => {
 
     const matricula = db.generarMatricula(cedula);
     const nombreCompletoRep = `${nombreRep} ${apellidoRep}`;
+    
+    // Generar IDs para alumnos ahora
+    const alumnosConId = alumnos.map((a, idx) => ({ ...a, id: `${cedula}-${idx + 1}` }));
 
     try {
       // 1. Guardar Representante y Alumnos
@@ -103,7 +106,7 @@ export const RegistroAlumno: React.FC = () => {
         correo,
         direccion,
         matricula,
-        alumnos: alumnos.map((a, idx) => ({ ...a, id: `${cedula}-${idx + 1}` }))
+        alumnos: alumnosConId
       };
 
       await db.saveRepresentante(nuevoRepresentante);
@@ -119,8 +122,8 @@ export const RegistroAlumno: React.FC = () => {
         const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(metodoPago);
         const montoBs = esPagoBs ? (montoNum * tasaCambio) : undefined;
         
-        // Agregar matrícula a la observación para rastreo en Libro Contable
-        const observacionFinal = `${observacionPago} - Mat: ${matricula}`;
+        // Si hay un solo alumno, asignamos su ID, si no "VARIOS"
+        const studentIdRef = alumnosConId.length === 1 ? alumnosConId[0].id : 'VARIOS';
 
         const nuevoPago: RegistroPago = {
           id: crypto.randomUUID(),
@@ -130,14 +133,19 @@ export const RegistroAlumno: React.FC = () => {
           cedulaRepresentante: cedula,
           nombreRepresentante: nombreCompletoRep,
           matricula: matricula,
-          nivel: alumnos.map(a => a.nivel).join(', '),
-          tipoPago: 'Abono', // Usamos Abono para que sume al saldo general
+          
+          // Nuevos campos para la estructura A-Q
+          studentId: studentIdRef,
+          mes: 'Inscripción',
+          anio: ANIO_ESCOLAR_ACTUAL,
+          formaPago: 'Abono',
+          
           metodoPago: metodoPago,
           referencia: referenciaPago,
-          monto: montoNum, // Siempre en USD base
+          monto: montoNum,
           montoBolivares: montoBs,
           tasaCambioAplicada: esPagoBs ? tasaCambio : undefined,
-          observaciones: observacionFinal,
+          observaciones: `${observacionPago} - Inscripción`,
           estado: requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO
         };
 
@@ -331,7 +339,7 @@ export const RegistroAlumno: React.FC = () => {
                           onChange={(e) => setObservacionPago(e.target.value)} 
                           className="w-full border border-gray-300 rounded-md p-2"
                         />
-                        <p className="text-[10px] text-gray-400 mt-1">* Se agregará la matrícula automáticamente.</p>
+                        <p className="text-[10px] text-gray-400 mt-1">* Se guardará como 'Inscripción' {ANIO_ESCOLAR_ACTUAL}.</p>
                     </div>
                 </div>
             </div>

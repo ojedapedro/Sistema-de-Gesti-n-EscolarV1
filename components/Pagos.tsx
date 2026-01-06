@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago } from '../types';
-import { REQUIERE_VERIFICACION } from '../constants';
-import { Search, DollarSign, CheckCircle, Calculator, RefreshCw, Loader2 } from 'lucide-react';
+import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2 } from 'lucide-react';
 
 export const Pagos: React.FC = () => {
   const [busquedaCedula, setBusquedaCedula] = useState('');
@@ -19,7 +19,14 @@ export const Pagos: React.FC = () => {
   const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
   const [referencia, setReferencia] = useState('');
   const [observaciones, setObservaciones] = useState('');
-  const [tipoPago, setTipoPago] = useState<'Abono' | 'Total'>('Abono');
+  const [formaPago, setFormaPago] = useState('Abono'); // Antes tipoPago
+  
+  // Nuevos campos
+  const [mesPago, setMesPago] = useState('Septiembre');
+  const [anioPago, setAnioPago] = useState(ANIO_ESCOLAR_ACTUAL);
+  const [studentId, setStudentId] = useState('');
+
+  const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Inscripción'];
 
   useEffect(() => {
     db.getConfig().then(c => setTasaCambio(c.tasaCambio || 0));
@@ -35,6 +42,8 @@ export const Pagos: React.FC = () => {
         setRepresentante(rep);
         const deuda = await db.calcularSaldoPendiente(rep.cedula);
         setSaldoPendiente(deuda || 0);
+        // Preseleccionar primer estudiante si hay
+        if (rep.alumnos.length > 0) setStudentId(rep.alumnos[0].id);
       } else {
         setRepresentante(null);
         setError('Representante no encontrado');
@@ -84,18 +93,21 @@ export const Pagos: React.FC = () => {
     const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodo);
     const estadoInicial = requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
     
-    const niveles = Array.from(new Set(representante.alumnos.map(a => a.nivel))).join(', ');
-
     const nuevoPago: RegistroPago = {
-      id: crypto.randomUUID(), // ID temporal, el backend generará row ID
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       fechaRegistro: new Date().toISOString().split('T')[0],
       fechaPago: new Date().toISOString().split('T')[0],
       cedulaRepresentante: representante.cedula,
       nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
       matricula: representante.matricula,
-      nivel: niveles,
-      tipoPago,
+      
+      // Nuevos campos
+      studentId: studentId,
+      mes: mesPago,
+      anio: anioPago,
+      formaPago: formaPago,
+
       metodoPago: metodo,
       referencia,
       monto: montoNum,
@@ -188,6 +200,29 @@ export const Pagos: React.FC = () => {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
             <h3 className="font-bold text-lg mb-4 text-slate-700">Detalles del Pago</h3>
             
+            {/* Nuevos Selectores: Estudiante, Mes, Año */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
+                <div>
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Estudiante</label>
+                   <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
+                      <option value="VARIOS">VARIOS / TODOS</option>
+                      {representante.alumnos.map(alu => (
+                        <option key={alu.id} value={alu.id}>{alu.nombres}</option>
+                      ))}
+                   </select>
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Mes a Pagar</label>
+                   <select value={mesPago} onChange={(e) => setMesPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
+                      {meses.map(m => <option key={m} value={m}>{m}</option>)}
+                   </select>
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Año Escolar</label>
+                   <input type="text" value={anioPago} onChange={(e) => setAnioPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5" />
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
@@ -204,15 +239,15 @@ export const Pagos: React.FC = () => {
                 </select>
                </div>
                <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Forma</label>
                 <div className="flex gap-4 mt-2">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={tipoPago === 'Abono'} onChange={() => setTipoPago('Abono')} />
+                    <input type="radio" checked={formaPago === 'Abono'} onChange={() => setFormaPago('Abono')} />
                     <span>Abono</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={tipoPago === 'Total'} onChange={() => {
-                        setTipoPago('Total');
+                    <input type="radio" checked={formaPago === 'Total'} onChange={() => {
+                        setFormaPago('Total');
                         handleMontoUsdChange(saldoPendiente.toString());
                     }} />
                     <span>Total Deuda</span>
@@ -245,7 +280,7 @@ export const Pagos: React.FC = () => {
                   type="number" 
                   value={monto}
                   onChange={(e) => handleMontoUsdChange(e.target.value)}
-                  readOnly={isMetodoBolivares(metodo) && tipoPago === 'Abono' && montoBs !== ''}
+                  readOnly={isMetodoBolivares(metodo) && formaPago === 'Abono' && montoBs !== ''}
                   className={`w-full border border-gray-300 rounded-md p-2 font-mono text-lg ${isMetodoBolivares(metodo) ? 'bg-gray-100 text-gray-600' : 'bg-white'}`}
                   placeholder="0.00"
                 />

@@ -133,7 +133,7 @@ export const Verificacion: React.FC = () => {
               <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
                 <tr>
                   <th className="px-6 py-3">Fecha</th>
-                  <th className="px-6 py-3">Origen</th>
+                  <th className="px-6 py-3">Concepto</th>
                   <th className="px-6 py-3">Representante</th>
                   <th className="px-6 py-3">Método / Ref</th>
                   <th className="px-6 py-3 text-right">Monto</th>
@@ -146,8 +146,9 @@ export const Verificacion: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       {pago.fechaRegistro}
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <Monitor size={16} className="text-gray-400" />
+                     <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-bold text-gray-700">{pago.mes || 'N/A'}</div>
+                      <div className="text-xs text-gray-400">{pago.anio}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">{pago.nombreRepresentante}</div>
@@ -161,7 +162,7 @@ export const Verificacion: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="font-bold text-gray-900">${(pago.monto || 0).toFixed(2)}</div>
-                      {pago.montoBolivares && (
+                      {pago.montoBolivares && pago.montoBolivares > 0 && (
                         <div className="text-xs text-gray-500">Bs. {(pago.montoBolivares || 0).toFixed(2)}</div>
                       )}
                     </td>
