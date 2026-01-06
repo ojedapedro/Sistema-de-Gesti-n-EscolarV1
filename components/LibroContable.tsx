@@ -14,6 +14,7 @@ export const LibroContable: React.FC = () => {
     setLoading(true);
     try {
       const todos = await db.getPagos();
+      // Filtrar solo los verificados
       let filtrados = todos.filter(p => p.estado === EstadoPago.VERIFICADO);
 
       if (fechaFiltro) {
@@ -33,8 +34,8 @@ export const LibroContable: React.FC = () => {
     cargarDatos();
   }, [fechaFiltro]);
 
-  const totalUSD = pagosVerificados.reduce((acc, p) => acc + (p.monto || 0), 0);
-  const totalBsEstimado = pagosVerificados.reduce((acc, p) => acc + (p.montoBolivares || 0), 0);
+  const totalUSD = pagosVerificados.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
+  const totalBs = pagosVerificados.reduce((acc, p) => acc + (Number(p.montoBolivares) || 0), 0);
 
   const descargarReporteLibro = () => {
     const doc = new jsPDF();
@@ -49,14 +50,14 @@ export const LibroContable: React.FC = () => {
         p.metodoPago,
         p.referencia,
         `$${(p.monto || 0).toFixed(2)}`,
-        p.montoBolivares ? `Bs ${(p.montoBolivares || 0).toFixed(2)}` : '-'
+        (p.montoBolivares && p.montoBolivares > 0) ? `Bs ${(p.montoBolivares).toFixed(2)}` : '-'
     ]);
 
     (doc as any).autoTable({
         startY: 35,
         head: [['Fecha', 'Representante', 'Método', 'Referencia', 'Monto USD', 'Monto Bs']],
         body: tableData,
-        foot: [[ 'TOTALES', '', '', '', `$${totalUSD.toFixed(2)}`, `Bs ${totalBsEstimado.toFixed(2)}` ]]
+        foot: [[ 'TOTALES', '', '', '', `$${totalUSD.toFixed(2)}`, `Bs ${totalBs.toFixed(2)}` ]]
     });
 
     doc.save('libro_contable.pdf');
@@ -106,8 +107,8 @@ export const LibroContable: React.FC = () => {
         </div>
         <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 flex items-center justify-between">
             <div>
-                <p className="text-sm font-medium text-blue-700 uppercase tracking-wider">Total Ingresos Bs (Ref)</p>
-                <h3 className="text-3xl font-bold text-blue-800 mt-1">Bs. {(totalBsEstimado || 0).toFixed(2)}</h3>
+                <p className="text-sm font-medium text-blue-700 uppercase tracking-wider">Total Ingresos Bs (Recibidos)</p>
+                <h3 className="text-3xl font-bold text-blue-800 mt-1">Bs. {(totalBs || 0).toFixed(2)}</h3>
             </div>
             <div className="p-3 bg-blue-200 rounded-full text-blue-700">
                 <TrendingUp size={24} />
@@ -130,7 +131,7 @@ export const LibroContable: React.FC = () => {
             </thead>
             <tbody>
                 {pagosVerificados.length === 0 ? (
-                     <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400">No hay pagos verificados.</td></tr>
+                     <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400">No hay pagos verificados para mostrar.</td></tr>
                 ) : (
                     pagosVerificados.map(pago => (
                         <tr key={pago.id} className="bg-white border-b hover:bg-gray-50">
@@ -144,7 +145,13 @@ export const LibroContable: React.FC = () => {
                                 <span className="text-xs font-mono text-gray-400">Ref: {pago.referencia}</span>
                             </td>
                             <td className="px-6 py-4 text-right font-bold text-gray-900">${(pago.monto || 0).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-gray-600">{pago.montoBolivares ? `Bs. ${(pago.montoBolivares || 0).toFixed(2)}` : '-'}</td>
+                            <td className="px-6 py-4 text-right text-gray-600">
+                                {(pago.montoBolivares && pago.montoBolivares > 0) ? (
+                                    <span className="font-medium text-blue-600">Bs. {pago.montoBolivares.toFixed(2)}</span>
+                                ) : (
+                                    <span className="text-gray-300">-</span>
+                                )}
+                            </td>
                         </tr>
                     ))
                 )}
