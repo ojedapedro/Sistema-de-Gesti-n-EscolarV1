@@ -28,6 +28,7 @@ export const Pagos: React.FC = () => {
 
   // Estado Post-Pago (Recibo)
   const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
+  const [saldoAnteriorRecibo, setSaldoAnteriorRecibo] = useState(0);
   const [saldoRestanteRecibo, setSaldoRestanteRecibo] = useState(0);
 
   const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Inscripción'];
@@ -104,6 +105,10 @@ export const Pagos: React.FC = () => {
         if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
     }
 
+    // Determinar si es cancelación total para etiqueta
+    const nuevoSaldo = Math.max(0, saldoPendiente - montoNum);
+    const etiquetaFormaPago = nuevoSaldo <= 0.1 ? 'Cancelación Total' : 'Abono';
+
     const nuevoPago: RegistroPago = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -115,7 +120,7 @@ export const Pagos: React.FC = () => {
       studentId: studentId,
       mes: mesPago,
       anio: anioPago,
-      formaPago: formaPago,
+      formaPago: etiquetaFormaPago,
       metodoPago: metodo,
       referencia,
       monto: montoNum,
@@ -128,12 +133,12 @@ export const Pagos: React.FC = () => {
     try {
       await db.savePago(nuevoPago);
       
-      // Preparar datos para la vista de éxito / recibo
-      const nuevoSaldo = Math.max(0, saldoPendiente - montoNum);
+      // Guardar estados para el recibo
+      setSaldoAnteriorRecibo(saldoPendiente);
       setSaldoRestanteRecibo(nuevoSaldo);
       setPagoExitoso(nuevoPago);
 
-      // Limpiar formulario interno pero mantener representante
+      // Limpiar formulario interno
       setMonto('');
       setMontoBs('');
       setReferencia('');
@@ -149,111 +154,133 @@ export const Pagos: React.FC = () => {
   const generarReciboPDF = () => {
     if (!pagoExitoso || !representante) return;
 
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    
-    // --- Header ---
-    doc.setFillColor(63, 81, 181); // Indigo Header
-    doc.rect(0, 0, pageWidth, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text("RECIBO DE PAGO", pageWidth / 2, 20, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
+    try {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+        
+        // --- Header ---
+        doc.setFillColor(63, 81, 181); // Indigo Header
+        doc.rect(0, 0, pageWidth, 40, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        
+        // Título dinámico
+        const tituloRecibo = saldoRestanteRecibo <= 0.1 ? "CANCELACIÓN TOTAL" : "RECIBO DE ABONO";
+        doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
+        
+        doc.setFontSize(12);
+        doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
 
-    // --- Info General ---
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
-    doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 56);
-    
-    // --- Datos Representante ---
-    doc.setDrawColor(200, 200, 200);
-    doc.line(14, 62, pageWidth - 14, 62);
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("DATOS DEL REPRESENTANTE", 14, 70);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 78);
-    doc.text(`Cédula: ${representante.cedula}`, 14, 84);
-    doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
+        // --- Info General ---
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
+        doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 56);
+        
+        // --- Datos Representante ---
+        doc.setDrawColor(200, 200, 200);
+        doc.line(14, 62, pageWidth - 14, 62);
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DATOS DEL REPRESENTANTE", 14, 70);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 78);
+        doc.text(`Cédula: ${representante.cedula}`, 14, 84);
+        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
 
-    // --- Datos del Pago ---
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+        // --- Datos del Pago ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
 
-    const startY = 115;
-    const col2 = pageWidth / 2;
+        const startY = 115;
+        const col2 = pageWidth / 2;
 
-    doc.text(`Concepto: ${pagoExitoso.formaPago} - ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
-    
-    // Resolver nombre alumno
-    let nombreAlumno = "Todos / Varios";
-    if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
-         const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
-         if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
-    }
-    doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
-    
-    doc.text(`Método de Pago: ${pagoExitoso.metodoPago}`, col2, startY);
-    doc.text(`Referencia: ${pagoExitoso.referencia}`, col2, startY + 8);
+        doc.text(`Concepto: ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
+        
+        // Resolver nombre alumno
+        let nombreAlumno = "Todos / Varios";
+        if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
+            const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
+            if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
+        }
+        doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
+        
+        doc.text(`Método: ${pagoExitoso.metodoPago}`, col2, startY);
+        doc.text(`Ref: ${pagoExitoso.referencia}`, col2, startY + 8);
 
-    if (pagoExitoso.tasaCambioAplicada) {
-        doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
-    }
+        if (pagoExitoso.tasaCambioAplicada) {
+            doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
+        }
 
-    // --- Caja de Montos ---
-    const boxY = 150;
-    doc.setDrawColor(0, 0, 0);
-    doc.setFillColor(245, 247, 250);
-    doc.rect(14, boxY, pageWidth - 28, 45, 'FD');
+        // --- Caja de Montos ---
+        const boxY = 150;
+        doc.setDrawColor(0, 0, 0);
+        doc.setFillColor(245, 247, 250); // Gris muy claro
+        doc.rect(14, boxY, pageWidth - 28, 50, 'FD');
 
-    doc.setFont("helvetica", "bold");
-    doc.text("RESUMEN FINANCIERO", 20, boxY + 10);
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.text("Saldo Anterior (Deuda):", 20, boxY + 20);
-    doc.text(`$${saldoPendiente.toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
-
-    doc.text("Monto Abonado:", 20, boxY + 28);
-    doc.setFont("helvetica", "bold");
-    doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
-    
-    if (pagoExitoso.montoBolivares) {
-        doc.setFontSize(9);
-        doc.setTextColor(100);
-        doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
-        doc.setTextColor(0);
+        doc.setFont("helvetica", "bold");
+        doc.text("ESTADO DE CUENTA", 20, boxY + 10);
+        
         doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        
+        // Deuda Anterior
+        doc.text("Saldo Anterior (Deuda):", 20, boxY + 20);
+        doc.text(`$${saldoAnteriorRecibo.toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
+
+        // Monto Abonado
+        doc.text("Monto Abonado (-):", 20, boxY + 28);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 100, 0); // Verde oscuro
+        doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
+        doc.setTextColor(0);
+        
+        if (pagoExitoso.montoBolivares) {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(100);
+            doc.text(`(Pagado en Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
+            doc.setTextColor(0);
+            doc.setFontSize(11);
+        }
+
+        doc.setDrawColor(200);
+        doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
+
+        // Saldo Final
+        doc.setFont("helvetica", "bold");
+        doc.text("SALDO PENDIENTE:", 20, boxY + 45);
+        
+        if (saldoRestanteRecibo > 0.1) {
+             doc.setTextColor(200, 0, 0); // Rojo si debe
+        } else {
+             doc.setTextColor(0, 0, 0);
+        }
+        
+        doc.text(`$${saldoRestanteRecibo.toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
+
+        // --- Footer ---
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 220);
+        if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text("* Este recibo es un comprobante de registro. El pago está sujeto a verificación bancaria.", 14, 225);
+        }
+
+        doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
+    } catch (e) {
+        console.error("Error al generar PDF:", e);
+        alert("Error al generar el PDF. Intente nuevamente.");
     }
-
-    doc.setDrawColor(200);
-    doc.line(20, boxY + 36, pageWidth - 20, boxY + 36);
-
-    doc.setFont("helvetica", "bold");
-    doc.text("SALDO PENDIENTE:", 20, boxY + 42);
-    doc.setTextColor(200, 0, 0);
-    doc.text(`$${saldoRestanteRecibo.toFixed(2)}`, pageWidth - 30, boxY + 42, { align: 'right' });
-
-    // --- Footer ---
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 210);
-    if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
-        doc.setFontSize(8);
-        doc.setTextColor(150);
-        doc.text("* Este recibo es un comprobante de registro. El pago está sujeto a verificación bancaria.", 14, 215);
-    }
-
-    doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.fechaRegistro}.pdf`);
   };
 
   const resetearVista = () => {
@@ -271,7 +298,9 @@ export const Pagos: React.FC = () => {
                         <CheckCircle size={32} />
                     </div>
                     <h2 className="text-2xl font-bold">¡Pago Registrado!</h2>
-                    <p className="opacity-90 mt-1">La transacción se ha guardado correctamente.</p>
+                    <p className="opacity-90 mt-1">
+                        {saldoRestanteRecibo <= 0.1 ? 'Deuda cancelada en su totalidad.' : 'Abono registrado correctamente.'}
+                    </p>
                 </div>
                 
                 <div className="p-8 space-y-6">
@@ -287,13 +316,13 @@ export const Pagos: React.FC = () => {
                     
                     <div className="flex justify-between items-center border-b pb-4">
                         <span className="text-gray-500">Saldo Restante:</span>
-                        <span className={`text-xl font-bold ${saldoRestanteRecibo > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <span className={`text-xl font-bold ${saldoRestanteRecibo > 0.1 ? 'text-red-600' : 'text-green-600'}`}>
                             ${saldoRestanteRecibo.toFixed(2)}
                         </span>
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600">
-                        <p><strong>Estado:</strong> {pagoExitoso.estado}</p>
+                        <p><strong>Tipo:</strong> {saldoRestanteRecibo <= 0.1 ? 'CANCELACIÓN TOTAL' : 'ABONO'}</p>
                         <p><strong>Referencia:</strong> {pagoExitoso.referencia}</p>
                         {pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION && (
                             <p className="mt-2 text-xs text-orange-600 flex items-center gap-1">
