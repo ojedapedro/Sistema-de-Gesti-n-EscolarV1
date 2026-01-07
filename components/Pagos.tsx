@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago } from '../types';
 import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
+  // Estado Principal
   const [busquedaCedula, setBusquedaCedula] = useState('');
   const [representante, setRepresentante] = useState<Representante | null>(null);
   const [error, setError] = useState('');
@@ -13,18 +15,20 @@ export const Pagos: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingRep, setLoadingRep] = useState(false);
 
-  // Formulario Pago
+  // Estado del Formulario
   const [monto, setMonto] = useState('');
   const [montoBs, setMontoBs] = useState('');
   const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
   const [referencia, setReferencia] = useState('');
   const [observaciones, setObservaciones] = useState('');
-  const [formaPago, setFormaPago] = useState('Abono'); // Antes tipoPago
-  
-  // Nuevos campos
+  const [formaPago, setFormaPago] = useState('Abono'); 
   const [mesPago, setMesPago] = useState('Septiembre');
   const [anioPago, setAnioPago] = useState(ANIO_ESCOLAR_ACTUAL);
   const [studentId, setStudentId] = useState('');
+
+  // Estado Post-Pago (Recibo)
+  const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
+  const [saldoRestanteRecibo, setSaldoRestanteRecibo] = useState(0);
 
   const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Inscripción'];
 
@@ -36,13 +40,13 @@ export const Pagos: React.FC = () => {
     if (!busquedaCedula) return;
     setLoadingRep(true);
     setError('');
+    setPagoExitoso(null); // Resetear vista de recibo si busca de nuevo
     try {
       const rep = await db.getRepresentanteByCedula(busquedaCedula);
       if (rep) {
         setRepresentante(rep);
         const deuda = await db.calcularSaldoPendiente(rep.cedula);
         setSaldoPendiente(deuda || 0);
-        // Preseleccionar primer estudiante si hay
         if (rep.alumnos.length > 0) setStudentId(rep.alumnos[0].id);
       } else {
         setRepresentante(null);
@@ -93,6 +97,13 @@ export const Pagos: React.FC = () => {
     const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodo);
     const estadoInicial = requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
     
+    // Calcular nombre estudiante para el recibo
+    let nombreEstudiante = "VARIOS";
+    if (studentId && studentId !== "VARIOS") {
+        const est = representante.alumnos.find(a => a.id === studentId);
+        if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
+    }
+
     const nuevoPago: RegistroPago = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -101,34 +112,33 @@ export const Pagos: React.FC = () => {
       cedulaRepresentante: representante.cedula,
       nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
       matricula: representante.matricula,
-      
-      // Nuevos campos
       studentId: studentId,
       mes: mesPago,
       anio: anioPago,
       formaPago: formaPago,
-
       metodoPago: metodo,
       referencia,
       monto: montoNum,
       montoBolivares: isMetodoBolivares(metodo) && montoBs ? parseFloat(montoBs) : undefined,
       tasaCambioAplicada: isMetodoBolivares(metodo) ? tasaCambio : undefined,
-      observaciones,
+      observaciones: observaciones || (nombreEstudiante !== "VARIOS" ? `Pago de ${nombreEstudiante}` : ''),
       estado: estadoInicial
     };
 
     try {
       await db.savePago(nuevoPago);
-      alert(requiereVerificacion 
-        ? 'Pago registrado. Pendiente de verificación.' 
-        : 'Pago registrado y verificado exitosamente.'
-      );
+      
+      // Preparar datos para la vista de éxito / recibo
+      const nuevoSaldo = Math.max(0, saldoPendiente - montoNum);
+      setSaldoRestanteRecibo(nuevoSaldo);
+      setPagoExitoso(nuevoPago);
+
+      // Limpiar formulario interno pero mantener representante
       setMonto('');
       setMontoBs('');
       setReferencia('');
       setObservaciones('');
-      const nuevaDeuda = await db.calcularSaldoPendiente(representante.cedula);
-      setSaldoPendiente(nuevaDeuda || 0);
+      
     } catch (e) {
       alert("Error guardando el pago. Verifique conexión.");
     } finally {
@@ -136,6 +146,183 @@ export const Pagos: React.FC = () => {
     }
   };
 
+  const generarReciboPDF = () => {
+    if (!pagoExitoso || !representante) return;
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // --- Header ---
+    doc.setFillColor(63, 81, 181); // Indigo Header
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text("RECIBO DE PAGO", pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
+
+    // --- Info General ---
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
+    doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 56);
+    
+    // --- Datos Representante ---
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, 62, pageWidth - 14, 62);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("DATOS DEL REPRESENTANTE", 14, 70);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 78);
+    doc.text(`Cédula: ${representante.cedula}`, 14, 84);
+    doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
+
+    // --- Datos del Pago ---
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+
+    const startY = 115;
+    const col2 = pageWidth / 2;
+
+    doc.text(`Concepto: ${pagoExitoso.formaPago} - ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
+    
+    // Resolver nombre alumno
+    let nombreAlumno = "Todos / Varios";
+    if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
+         const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
+         if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
+    }
+    doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
+    
+    doc.text(`Método de Pago: ${pagoExitoso.metodoPago}`, col2, startY);
+    doc.text(`Referencia: ${pagoExitoso.referencia}`, col2, startY + 8);
+
+    if (pagoExitoso.tasaCambioAplicada) {
+        doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
+    }
+
+    // --- Caja de Montos ---
+    const boxY = 150;
+    doc.setDrawColor(0, 0, 0);
+    doc.setFillColor(245, 247, 250);
+    doc.rect(14, boxY, pageWidth - 28, 45, 'FD');
+
+    doc.setFont("helvetica", "bold");
+    doc.text("RESUMEN FINANCIERO", 20, boxY + 10);
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text("Saldo Anterior (Deuda):", 20, boxY + 20);
+    doc.text(`$${saldoPendiente.toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
+
+    doc.text("Monto Abonado:", 20, boxY + 28);
+    doc.setFont("helvetica", "bold");
+    doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
+    
+    if (pagoExitoso.montoBolivares) {
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
+        doc.setTextColor(0);
+        doc.setFontSize(11);
+    }
+
+    doc.setDrawColor(200);
+    doc.line(20, boxY + 36, pageWidth - 20, boxY + 36);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("SALDO PENDIENTE:", 20, boxY + 42);
+    doc.setTextColor(200, 0, 0);
+    doc.text(`$${saldoRestanteRecibo.toFixed(2)}`, pageWidth - 30, boxY + 42, { align: 'right' });
+
+    // --- Footer ---
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 210);
+    if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text("* Este recibo es un comprobante de registro. El pago está sujeto a verificación bancaria.", 14, 215);
+    }
+
+    doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.fechaRegistro}.pdf`);
+  };
+
+  const resetearVista = () => {
+    setPagoExitoso(null);
+    setSaldoPendiente(saldoRestanteRecibo); // Actualizar el saldo visual
+  };
+
+  // --- VISTA: PAGO EXITOSO / RECIBO ---
+  if (pagoExitoso && representante) {
+    return (
+        <div className="max-w-2xl mx-auto mt-8">
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-green-100">
+                <div className="bg-green-600 p-6 text-white text-center">
+                    <div className="bg-white text-green-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-md">
+                        <CheckCircle size={32} />
+                    </div>
+                    <h2 className="text-2xl font-bold">¡Pago Registrado!</h2>
+                    <p className="opacity-90 mt-1">La transacción se ha guardado correctamente.</p>
+                </div>
+                
+                <div className="p-8 space-y-6">
+                    <div className="flex justify-between items-center border-b pb-4">
+                        <span className="text-gray-500">Monto Registrado:</span>
+                        <div className="text-right">
+                             <span className="text-xl font-bold text-gray-800 block">${(pagoExitoso.monto || 0).toFixed(2)}</span>
+                             {pagoExitoso.montoBolivares && (
+                                <span className="text-sm text-gray-500">Bs. {pagoExitoso.montoBolivares.toFixed(2)}</span>
+                             )}
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center border-b pb-4">
+                        <span className="text-gray-500">Saldo Restante:</span>
+                        <span className={`text-xl font-bold ${saldoRestanteRecibo > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            ${saldoRestanteRecibo.toFixed(2)}
+                        </span>
+                    </div>
+
+                    <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600">
+                        <p><strong>Estado:</strong> {pagoExitoso.estado}</p>
+                        <p><strong>Referencia:</strong> {pagoExitoso.referencia}</p>
+                        {pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION && (
+                            <p className="mt-2 text-xs text-orange-600 flex items-center gap-1">
+                                <RefreshCw size={12}/> Requiere verificación en el módulo administrativo.
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="flex gap-4 pt-2">
+                        <button 
+                            onClick={generarReciboPDF}
+                            className="flex-1 bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-700 flex justify-center items-center gap-2 shadow-lg transition-transform hover:-translate-y-1"
+                        >
+                            <Printer size={20} /> Descargar Recibo
+                        </button>
+                        <button 
+                            onClick={resetearVista}
+                            className="flex-1 bg-white text-slate-700 border-2 border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-50 flex justify-center items-center gap-2"
+                        >
+                            <ArrowLeft size={20} /> Nuevo Pago
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+  }
+
+  // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
