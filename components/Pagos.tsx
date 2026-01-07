@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago } from '../types';
 import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
@@ -10,7 +10,10 @@ export const Pagos: React.FC = () => {
   const [busquedaCedula, setBusquedaCedula] = useState('');
   const [representante, setRepresentante] = useState<Representante | null>(null);
   const [error, setError] = useState('');
-  const [saldoPendiente, setSaldoPendiente] = useState(0);
+  
+  // Saldo Real (Puede ser negativo si hay saldo a favor)
+  const [saldoReal, setSaldoReal] = useState(0);
+  
   const [tasaCambio, setTasaCambio] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingRep, setLoadingRep] = useState(false);
@@ -29,9 +32,9 @@ export const Pagos: React.FC = () => {
   // Estado Post-Pago (Recibo)
   const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
   const [saldoAnteriorRecibo, setSaldoAnteriorRecibo] = useState(0);
-  const [saldoRestanteRecibo, setSaldoRestanteRecibo] = useState(0);
+  const [saldoFinalRecibo, setSaldoFinalRecibo] = useState(0);
 
-  const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Inscripción'];
+  const meses = ['Inscripción', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto'];
 
   useEffect(() => {
     db.getConfig().then(c => setTasaCambio(c.tasaCambio || 0));
@@ -41,13 +44,13 @@ export const Pagos: React.FC = () => {
     if (!busquedaCedula) return;
     setLoadingRep(true);
     setError('');
-    setPagoExitoso(null); // Resetear vista de recibo si busca de nuevo
+    setPagoExitoso(null);
     try {
       const rep = await db.getRepresentanteByCedula(busquedaCedula);
       if (rep) {
         setRepresentante(rep);
-        const deuda = await db.calcularSaldoPendiente(rep.cedula);
-        setSaldoPendiente(deuda || 0);
+        const saldoCalc = await db.calcularSaldoPendiente(rep.cedula);
+        setSaldoReal(saldoCalc);
         if (rep.alumnos.length > 0) setStudentId(rep.alumnos[0].id);
       } else {
         setRepresentante(null);
@@ -98,16 +101,17 @@ export const Pagos: React.FC = () => {
     const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodo);
     const estadoInicial = requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
     
-    // Calcular nombre estudiante para el recibo
+    // Calcular nombre estudiante
     let nombreEstudiante = "VARIOS";
     if (studentId && studentId !== "VARIOS") {
         const est = representante.alumnos.find(a => a.id === studentId);
         if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
     }
 
-    // Determinar si es cancelación total para etiqueta
-    const nuevoSaldo = Math.max(0, saldoPendiente - montoNum);
-    const etiquetaFormaPago = nuevoSaldo <= 0.1 ? 'Cancelación Total' : 'Abono';
+    // Calcular Nuevo Saldo (Matemática simple: Saldo Actual - Pago)
+    // Si saldoReal era 100 (deuda) y paga 120, nuevo saldo es -20 (crédito)
+    const nuevoSaldo = saldoReal - montoNum;
+    const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
 
     const nuevoPago: RegistroPago = {
       id: crypto.randomUUID(),
@@ -133,12 +137,10 @@ export const Pagos: React.FC = () => {
     try {
       await db.savePago(nuevoPago);
       
-      // Guardar estados para el recibo
-      setSaldoAnteriorRecibo(saldoPendiente);
-      setSaldoRestanteRecibo(nuevoSaldo);
+      setSaldoAnteriorRecibo(saldoReal);
+      setSaldoFinalRecibo(nuevoSaldo);
       setPagoExitoso(nuevoPago);
 
-      // Limpiar formulario interno
       setMonto('');
       setMontoBs('');
       setReferencia('');
@@ -159,14 +161,14 @@ export const Pagos: React.FC = () => {
         const pageWidth = doc.internal.pageSize.width;
         
         // --- Header ---
-        doc.setFillColor(63, 81, 181); // Indigo Header
+        doc.setFillColor(63, 81, 181);
         doc.rect(0, 0, pageWidth, 40, 'F');
         
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
         // Título dinámico
-        const tituloRecibo = saldoRestanteRecibo <= 0.1 ? "CANCELACIÓN TOTAL" : "RECIBO DE ABONO";
+        const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "RECIBO DE ABONO";
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
         
         doc.setFontSize(12);
@@ -191,7 +193,7 @@ export const Pagos: React.FC = () => {
         doc.text(`Cédula: ${representante.cedula}`, 14, 84);
         doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
 
-        // --- Datos del Pago ---
+        // --- Detalles Transacción ---
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
         doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
@@ -203,7 +205,6 @@ export const Pagos: React.FC = () => {
 
         doc.text(`Concepto: ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
         
-        // Resolver nombre alumno
         let nombreAlumno = "Todos / Varios";
         if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
             const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
@@ -221,8 +222,8 @@ export const Pagos: React.FC = () => {
         // --- Caja de Montos ---
         const boxY = 150;
         doc.setDrawColor(0, 0, 0);
-        doc.setFillColor(245, 247, 250); // Gris muy claro
-        doc.rect(14, boxY, pageWidth - 28, 50, 'FD');
+        doc.setFillColor(245, 247, 250);
+        doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
 
         doc.setFont("helvetica", "bold");
         doc.text("ESTADO DE CUENTA", 20, boxY + 10);
@@ -230,14 +231,18 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
-        // Deuda Anterior
-        doc.text("Saldo Anterior (Deuda):", 20, boxY + 20);
-        doc.text(`$${saldoAnteriorRecibo.toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
+        // Estado Previo
+        const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Deuda):" : "Saldo Anterior (A Favor):";
+        doc.text(textoSaldoAnt, 20, boxY + 20);
+        // Mostrar absoluto para no confundir con signos negativos en el recibo impreso si no se desea
+        // Pero financieramente: Negativo es a favor.
+        const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
+        doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
 
-        // Monto Abonado
-        doc.text("Monto Abonado (-):", 20, boxY + 28);
+        // Monto Pagado
+        doc.text("Monto Cancelado (-):", 20, boxY + 28);
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 100, 0); // Verde oscuro
+        doc.setTextColor(0, 100, 0);
         doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
         doc.setTextColor(0);
         
@@ -245,7 +250,7 @@ export const Pagos: React.FC = () => {
             doc.setFont("helvetica", "normal");
             doc.setFontSize(9);
             doc.setTextColor(100);
-            doc.text(`(Pagado en Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
+            doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
             doc.setTextColor(0);
             doc.setFontSize(11);
         }
@@ -255,51 +260,60 @@ export const Pagos: React.FC = () => {
 
         // Saldo Final
         doc.setFont("helvetica", "bold");
-        doc.text("SALDO PENDIENTE:", 20, boxY + 45);
         
-        if (saldoRestanteRecibo > 0.1) {
-             doc.setTextColor(200, 0, 0); // Rojo si debe
+        let labelFinal = "SALDO PENDIENTE:";
+        if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
+        
+        doc.text(labelFinal, 20, boxY + 45);
+        
+        if (saldoFinalRecibo > 0) {
+             doc.setTextColor(200, 0, 0); // Rojo Deuda
         } else {
-             doc.setTextColor(0, 0, 0);
+             doc.setTextColor(0, 150, 0); // Verde Crédito
         }
         
-        doc.text(`$${saldoRestanteRecibo.toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
+        // Mostrar absoluto con indicativo
+        doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
         // --- Footer ---
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 220);
+        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 225);
         if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
             doc.setFontSize(8);
             doc.setTextColor(150);
-            doc.text("* Este recibo es un comprobante de registro. El pago está sujeto a verificación bancaria.", 14, 225);
+            doc.text("* Pago sujeto a verificación bancaria. El saldo se actualizará tras validación.", 14, 230);
         }
 
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
         console.error("Error al generar PDF:", e);
-        alert("Error al generar el PDF. Intente nuevamente.");
+        alert("Error al generar el PDF.");
     }
   };
 
   const resetearVista = () => {
     setPagoExitoso(null);
-    setSaldoPendiente(saldoRestanteRecibo); // Actualizar el saldo visual
+    setSaldoReal(saldoFinalRecibo); // Actualizar el saldo visual en pantalla
   };
 
   // --- VISTA: PAGO EXITOSO / RECIBO ---
   if (pagoExitoso && representante) {
+    const esSaldoFavor = saldoFinalRecibo <= 0;
+    
     return (
         <div className="max-w-2xl mx-auto mt-8">
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-green-100">
-                <div className="bg-green-600 p-6 text-white text-center">
-                    <div className="bg-white text-green-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-md">
+            <div className={`rounded-2xl shadow-lg overflow-hidden border ${esSaldoFavor ? 'border-green-100' : 'border-indigo-100'} bg-white`}>
+                <div className={`${esSaldoFavor ? 'bg-green-600' : 'bg-indigo-600'} p-6 text-white text-center`}>
+                    <div className={`bg-white ${esSaldoFavor ? 'text-green-600' : 'text-indigo-600'} w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-md`}>
                         <CheckCircle size={32} />
                     </div>
-                    <h2 className="text-2xl font-bold">¡Pago Registrado!</h2>
+                    <h2 className="text-2xl font-bold">¡Transacción Registrada!</h2>
                     <p className="opacity-90 mt-1">
-                        {saldoRestanteRecibo <= 0.1 ? 'Deuda cancelada en su totalidad.' : 'Abono registrado correctamente.'}
+                        {esSaldoFavor 
+                         ? 'El pago cubre la deuda y genera saldo a favor.' 
+                         : 'Abono registrado. Aún queda saldo pendiente.'}
                     </p>
                 </div>
                 
@@ -315,18 +329,23 @@ export const Pagos: React.FC = () => {
                     </div>
                     
                     <div className="flex justify-between items-center border-b pb-4">
-                        <span className="text-gray-500">Saldo Restante:</span>
-                        <span className={`text-xl font-bold ${saldoRestanteRecibo > 0.1 ? 'text-red-600' : 'text-green-600'}`}>
-                            ${saldoRestanteRecibo.toFixed(2)}
-                        </span>
+                        <span className="text-gray-500">Nuevo Saldo Real:</span>
+                        <div className="text-right">
+                            <span className={`text-xl font-bold ${esSaldoFavor ? 'text-green-600' : 'text-red-600'}`}>
+                                {esSaldoFavor ? '-' : ''}${Math.abs(saldoFinalRecibo).toFixed(2)}
+                            </span>
+                            <span className="block text-xs text-gray-400">
+                                {esSaldoFavor ? '(Crédito a Favor)' : '(Deuda Pendiente)'}
+                            </span>
+                        </div>
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600">
-                        <p><strong>Tipo:</strong> {saldoRestanteRecibo <= 0.1 ? 'CANCELACIÓN TOTAL' : 'ABONO'}</p>
                         <p><strong>Referencia:</strong> {pagoExitoso.referencia}</p>
+                        <p><strong>Método:</strong> {pagoExitoso.metodoPago}</p>
                         {pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION && (
                             <p className="mt-2 text-xs text-orange-600 flex items-center gap-1">
-                                <RefreshCw size={12}/> Requiere verificación en el módulo administrativo.
+                                <RefreshCw size={12}/> Requiere verificación administrativa.
                             </p>
                         )}
                     </div>
@@ -342,7 +361,7 @@ export const Pagos: React.FC = () => {
                             onClick={resetearVista}
                             className="flex-1 bg-white text-slate-700 border-2 border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-50 flex justify-center items-center gap-2"
                         >
-                            <ArrowLeft size={20} /> Nuevo Pago
+                            <ArrowLeft size={20} /> Volver a Caja
                         </button>
                     </div>
                 </div>
@@ -387,7 +406,7 @@ export const Pagos: React.FC = () => {
       {representante && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-1">
-            <h3 className="font-bold text-lg mb-4 text-slate-700">Datos Matrícula</h3>
+            <h3 className="font-bold text-lg mb-4 text-slate-700">Ficha Financiera</h3>
             <div className="space-y-3 text-sm">
               <p><span className="font-semibold">Rep:</span> {representante.nombres} {representante.apellidos}</p>
               <p><span className="font-semibold">Cédula:</span> {representante.cedula}</p>
@@ -403,20 +422,30 @@ export const Pagos: React.FC = () => {
                 ))}
               </div>
 
-              <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-orange-100">
-                <p className="text-orange-800 text-xs uppercase font-bold tracking-wider">Saldo Pendiente</p>
+              {/* TARJETA DE SALDO REAL */}
+              <div className={`mt-6 p-4 rounded-lg border shadow-sm ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+                <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
+                   {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
+                   {saldoReal > 0 ? 'Saldo Pendiente (Deuda)' : 'Saldo a Favor (Crédito)'}
+                </p>
                 <div className="flex flex-col">
-                  <span className="text-2xl font-bold text-orange-600">${(saldoPendiente || 0).toFixed(2)}</span>
-                  <span className="text-sm text-orange-400 font-medium">~ Bs. {((saldoPendiente || 0) * (tasaCambio || 0)).toFixed(2)}</span>
+                  <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                    ${Math.abs(saldoReal).toFixed(2)}
+                  </span>
+                  <span className={`text-sm font-medium ${saldoReal > 0 ? 'text-orange-400' : 'text-green-500'}`}>
+                    ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
+                  </span>
+                  <p className="text-[10px] text-gray-500 mt-2 leading-tight">
+                    * Calculado al día de hoy basado en mensualidades acumuladas menos pagos verificados.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
-            <h3 className="font-bold text-lg mb-4 text-slate-700">Detalles del Pago</h3>
+            <h3 className="font-bold text-lg mb-4 text-slate-700">Registrar Nueva Transacción</h3>
             
-            {/* Nuevos Selectores: Estudiante, Mes, Año */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
                 <div>
                    <label className="block text-xs font-bold text-indigo-700 mb-1">Estudiante</label>
@@ -428,7 +457,7 @@ export const Pagos: React.FC = () => {
                    </select>
                 </div>
                 <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Mes a Pagar</label>
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Mes a Imputar</label>
                    <select value={mesPago} onChange={(e) => setMesPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
                       {meses.map(m => <option key={m} value={m}>{m}</option>)}
                    </select>
@@ -455,18 +484,23 @@ export const Pagos: React.FC = () => {
                 </select>
                </div>
                <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Forma</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo Transacción</label>
                 <div className="flex gap-4 mt-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="radio" checked={formaPago === 'Abono'} onChange={() => setFormaPago('Abono')} />
-                    <span>Abono</span>
+                    <span>Abono / Pago</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={formaPago === 'Total'} onChange={() => {
-                        setFormaPago('Total');
-                        handleMontoUsdChange(saldoPendiente.toString());
-                    }} />
-                    <span>Total Deuda</span>
+                    <input 
+                        type="radio" 
+                        checked={formaPago === 'Total'} 
+                        onChange={() => {
+                            setFormaPago('Total');
+                            if(saldoReal > 0) handleMontoUsdChange(saldoReal.toString());
+                        }} 
+                        disabled={saldoReal <= 0}
+                    />
+                    <span className={saldoReal <= 0 ? 'text-gray-400' : ''}>Total Deuda</span>
                   </label>
                 </div>
                </div>
@@ -526,10 +560,10 @@ export const Pagos: React.FC = () => {
             <button 
               onClick={procesarPago}
               disabled={loading}
-              className={`w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-bold flex justify-center items-center gap-2 shadow-md ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`w-full bg-slate-800 text-white py-3 rounded-lg hover:bg-slate-700 font-bold flex justify-center items-center gap-2 shadow-md ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               {loading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
-              {loading ? 'Procesando...' : 'Registrar Pago'}
+              {loading ? 'Procesando...' : 'Registrar Operación'}
             </button>
           </div>
         </div>

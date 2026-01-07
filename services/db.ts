@@ -107,6 +107,31 @@ class DatabaseService {
     return `mat-${ANIO_ESCOLAR_ACTUAL}-${cedula}`;
   }
 
+  /**
+   * Calcula los meses transcurridos del año escolar (Iniciando en Septiembre).
+   * Septiembre = 1, Octubre = 2, ...
+   * Esto permite calcular la deuda acumulada a la fecha.
+   */
+  private getMesesEscolaresTranscurridos(): number {
+    const now = new Date();
+    const currentMonth = now.getMonth(); // 0 = Enero, 8 = Septiembre
+    
+    // Lógica para año escolar que inicia en Septiembre (Index 8)
+    let meses = 0;
+    
+    if (currentMonth >= 8) { 
+       // Sept(8) -> 1, Oct(9) -> 2, Nov(10) -> 3, Dic(11) -> 4
+       meses = currentMonth - 7; 
+    } else { 
+       // Ene(0) -> 5, Feb(1) -> 6 ... Ago(7) -> 12
+       // Sept(1) + Oct(1) + Nov(1) + Dic(1) = 4 meses previos
+       meses = 4 + (currentMonth + 1);
+    }
+    
+    // Devolvemos al menos 1 (Mes de Inscripción/Inicio)
+    return Math.max(1, meses);
+  }
+
   async calcularSaldoPendiente(cedula: string): Promise<number> {
     const rep = await this.getRepresentanteByCedula(cedula);
     if (!rep) return 0;
@@ -114,21 +139,31 @@ class DatabaseService {
     // Obtener precios actualizados de la BD
     const nivelesConfig = await this.getNiveles();
     
+    // 1. Calcular DEUDA ESPERADA ACUMULADA (Lo que debería haber pagado hasta hoy)
+    const mesesTranscurridos = this.getMesesEscolaresTranscurridos();
     let deudaTotalEsperada = 0;
     
     rep.alumnos.forEach(alumno => {
-       // Buscar precio en BD, si no existe usar constante local como fallback
        const configNivel = nivelesConfig.find(n => n.nivel === alumno.nivel);
        const precioMensual = configNivel ? configNivel.precio : (MENSUALIDADES[alumno.nivel] || 0);
-       deudaTotalEsperada += precioMensual;
+       
+       // Costo = (Mensualidad * MesesTranscurridos) + Inscripción (Asumimos inscripción = 1 mensualidad extra)
+       // Total meses a cobrar = mesesTranscurridos + 1 (Inscripción)
+       const mesesCobranza = mesesTranscurridos + 1; 
+       
+       deudaTotalEsperada += (precioMensual * mesesCobranza);
     });
 
+    // 2. Calcular TOTAL PAGADO (Solo verificados)
     const pagos = await this.getPagos();
     const totalPagado = pagos
       .filter(p => p.cedulaRepresentante === cedula && p.estado === EstadoPago.VERIFICADO)
       .reduce((sum, p) => sum + p.monto, 0);
 
-    return Math.max(0, deudaTotalEsperada - totalPagado);
+    // 3. Retornar Saldo Real
+    // Si es Positivo (> 0): Debe dinero.
+    // Si es Negativo (< 0): Tiene saldo a favor (pagó por adelantado).
+    return deudaTotalEsperada - totalPagado;
   }
 }
 
