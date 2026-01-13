@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -7,6 +8,7 @@ import { Verificacion } from './components/Verificacion';
 import { Reportes } from './components/Reportes';
 import { Configuracion } from './components/Configuracion';
 import { LibroContable } from './components/LibroContable';
+import { Usuarios } from './components/Usuarios';
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -39,6 +41,7 @@ const AppContent: React.FC = () => {
       case 'verificacion': return <Verificacion />;
       case 'libro': return <LibroContable />;
       case 'reportes': return <Reportes />;
+      case 'usuarios': return <Usuarios />;
       case 'configuracion': return <Configuracion />;
       default: return <Dashboard />;
     }

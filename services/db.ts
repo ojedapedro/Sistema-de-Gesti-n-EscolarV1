@@ -1,3 +1,4 @@
+
 import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
@@ -36,17 +37,28 @@ class DatabaseService {
     }
   }
 
-  // --- Auth ---
+  // --- Auth & Users ---
   async login(cedula: string, password: string): Promise<User> {
-    // Si la llamada falla, fetchAPI lanzará el error con el mensaje del servidor
     const response = await this.fetchAPI('login', { cedula, password }, 'POST');
-    // El backend devuelve { status: 'success', cedula, nombre, rol, token }
     return {
       cedula: response.cedula,
       nombre: response.nombre,
       rol: response.rol,
       token: response.token
     };
+  }
+
+  async getUsers(): Promise<User[]> {
+    const data = await this.fetchAPI('getUsers');
+    return Array.isArray(data) ? data : [];
+  }
+
+  async saveUser(user: User): Promise<void> {
+    await this.fetchAPI('saveUser', user, 'POST');
+  }
+
+  async deleteUser(cedula: string): Promise<void> {
+    await this.fetchAPI('deleteUser', { cedula }, 'POST');
   }
 
   // --- Configuración ---

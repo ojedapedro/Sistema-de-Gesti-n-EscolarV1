@@ -1,3 +1,4 @@
+
 // ID de la Hoja de Cálculo
 const SPREADSHEET_ID = '13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs';
 
@@ -81,7 +82,6 @@ function doGet(e) {
         const rows = sheet.getDataRange().getValues();
         rows.shift();
         
-        // Mapeo EXACTO según la imagen proporcionada (Cols A-Q)
         result = rows.map(row => {
           const rawMonto = row[10];
           const rawMontoBs = row[11];
@@ -108,6 +108,21 @@ function doGet(e) {
         });
       }
     }
+    else if (action === 'getUsers') {
+      let sheet = ss.getSheetByName('Users');
+      if (!sheet) result = [];
+      else {
+        const rows = sheet.getDataRange().getValues();
+        rows.shift(); // Quitar header
+        // Mapeo: Cedula(0), Nombre(1), Rol(2), Password(3)
+        result = rows.map(row => ({
+          cedula: String(row[0]),
+          nombre: String(row[1]),
+          rol: String(row[2]),
+          password: String(row[3])
+        }));
+      }
+    }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -132,7 +147,6 @@ function doPost(e) {
       const { cedula, password } = data;
 
       // 1. SUPERUSUARIO (Hardcoded)
-      // Usuario: admin (o adminpro), Clave: 230274
       if ((cedula === 'admin' || cedula === 'superadmin') && password === '230274') {
          return success({
            cedula: '0000',
@@ -147,11 +161,9 @@ function doPost(e) {
       if (!sheet) return errorResponse("Credenciales inválidas (BD)");
 
       const rows = sheet.getDataRange().getValues();
-      // Asumimos columnas: Cedula (A), Nombre (B), Rol (C), Password (D)
-      // Empezamos en i=1 para saltar header
       for (let i = 1; i < rows.length; i++) {
         const rowCedula = String(rows[i][0]);
-        const rowPass = String(rows[i][3]); // Password en columna D
+        const rowPass = String(rows[i][3]);
         
         if (rowCedula === cedula && rowPass === password) {
           return success({
@@ -165,6 +177,45 @@ function doPost(e) {
       return errorResponse("Usuario o contraseña incorrectos");
     }
     
+    // --- USUARIOS (CRUD) ---
+    if (action === 'saveUser') {
+      let sheet = getOrCreateSheet(ss, 'Users', ['Cedula', 'Nombre', 'Rol', 'Password']);
+      const rows = sheet.getDataRange().getValues();
+      let rowIndex = -1;
+
+      // Buscar si ya existe la cedula para editar
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(data.cedula)) {
+          rowIndex = i + 1; // 1-based index
+          break;
+        }
+      }
+
+      if (rowIndex > 0) {
+        // Actualizar
+        sheet.getRange(rowIndex, 1, 1, 4).setValues([[data.cedula, data.nombre, data.rol, data.password]]);
+        return success('Usuario actualizado');
+      } else {
+        // Crear nuevo
+        sheet.appendRow([data.cedula, data.nombre, data.rol, data.password]);
+        return success('Usuario creado');
+      }
+    }
+
+    if (action === 'deleteUser') {
+      let sheet = ss.getSheetByName('Users');
+      if (!sheet) return errorResponse("No existe tabla de usuarios");
+      
+      const rows = sheet.getDataRange().getValues();
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(data.cedula)) {
+          sheet.deleteRow(i + 1);
+          return success('Usuario eliminado');
+        }
+      }
+      return errorResponse('Usuario no encontrado');
+    }
+
     // --- CONFIGURACIÓN ---
     if (action === 'saveConfig') {
       let sheet = getOrCreateSheet(ss, 'Config', ['Tasa', 'Fecha']);
@@ -279,8 +330,6 @@ function formatDateStr(dateVal) {
 }
 
 function success(payload) {
-  // Si el payload es string, lo envolvemos en { message: ... }
-  // Si es objeto, lo devolvemos tal cual mezclado con status success
   const response = typeof payload === 'string' 
     ? { status: 'success', message: payload }
     : { status: 'success', ...payload };
@@ -304,6 +353,5 @@ function setup() {
     'paymentMethod', 'reference', 'amount$', 'amountBs', 
     'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
   ]);
-  // Nueva hoja para usuarios
   getOrCreateSheet(ss, 'Users', ['Cedula', 'Nombre', 'Rol', 'Password']);
 }

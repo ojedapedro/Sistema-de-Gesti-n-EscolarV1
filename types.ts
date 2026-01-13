@@ -1,3 +1,4 @@
+
 // Definición de Niveles
 export enum NivelEducativo {
   MATERNAL = 'Maternal',
@@ -46,6 +47,7 @@ export interface User {
   cedula: string;
   nombre: string;
   rol: UserRole;
+  password?: string; // Nuevo campo opcional para gestión
   token?: string;
 }
 
