@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { User, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Plus, Edit2, Trash2, Save, X, Loader2, User as UserIcon, Lock } from 'lucide-react';
+import { Shield, Plus, Edit2, Trash2, Save, X, Loader2, User as UserIcon, Lock, Users } from 'lucide-react';
 
 export const Usuarios: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -73,7 +73,7 @@ export const Usuarios: React.FC = () => {
       await db.saveUser(editingUser as User);
       setIsModalOpen(false);
       await cargarUsuarios();
-      setMensaje({ type: 'success', text: 'Usuario guardado correctamente' });
+      setMensaje({ type: 'success', text: 'Datos guardados en UserAdmin' });
     } catch (e) {
       console.error(e);
       setMensaje({ type: 'error', text: 'Error guardando usuario' });
@@ -98,15 +98,15 @@ export const Usuarios: React.FC = () => {
       <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Shield className="text-indigo-600" /> Gestión de Usuarios
+            <Users className="text-indigo-600" /> Personal Administrativo
           </h2>
-          <p className="text-sm text-gray-500">Administra el acceso y roles del personal.</p>
+          <p className="text-sm text-gray-500">Gestión de usuarios y permisos (Hoja: UserAdmin).</p>
         </div>
         <button 
           onClick={() => handleOpenModal()}
           className="bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 flex items-center gap-2 text-sm font-medium"
         >
-          <Plus size={16} /> Agregar Usuario
+          <Plus size={16} /> Nuevo Usuario
         </button>
       </div>
 
@@ -131,7 +131,7 @@ export const Usuarios: React.FC = () => {
             </thead>
             <tbody>
               {users.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-8 text-center">No hay usuarios registrados (además del SuperAdmin).</td></tr>
+                <tr><td colSpan={4} className="px-6 py-8 text-center">No hay usuarios en UserAdmin (solo SuperAdmin).</td></tr>
               ) : (
                 users.map((u) => (
                   <tr key={u.cedula} className="bg-white border-b hover:bg-gray-50">

@@ -1,5 +1,5 @@
 
-// ID de la Hoja de Cálculo
+// ID de la Hoja de Cálculo (GestionAdminLB)
 const SPREADSHEET_ID = '13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs';
 
 function doGet(e) {
@@ -109,7 +109,8 @@ function doGet(e) {
       }
     }
     else if (action === 'getUsers') {
-      let sheet = ss.getSheetByName('Users');
+      // ACTUALIZADO: Lee de la hoja UserAdmin
+      let sheet = ss.getSheetByName('UserAdmin');
       if (!sheet) result = [];
       else {
         const rows = sheet.getDataRange().getValues();
@@ -146,7 +147,7 @@ function doPost(e) {
     if (action === 'login') {
       const { cedula, password } = data;
 
-      // 1. SUPERUSUARIO (Hardcoded)
+      // 1. SUPERUSUARIO (Hardcoded para acceso inicial/rescate)
       if ((cedula === 'admin' || cedula === 'superadmin') && password === '230274') {
          return success({
            cedula: '0000',
@@ -156,15 +157,16 @@ function doPost(e) {
          });
       }
 
-      // 2. Usuarios Normales (Desde Hoja de Cálculo)
-      const sheet = ss.getSheetByName('Users');
-      if (!sheet) return errorResponse("Credenciales inválidas (BD)");
+      // 2. Usuarios Normales (Desde Hoja UserAdmin)
+      const sheet = ss.getSheetByName('UserAdmin');
+      if (!sheet) return errorResponse("Credenciales inválidas (BD no encontrada)");
 
       const rows = sheet.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
         const rowCedula = String(rows[i][0]);
         const rowPass = String(rows[i][3]);
         
+        // Autenticación simple: Cédula + Contraseña
         if (rowCedula === cedula && rowPass === password) {
           return success({
             cedula: rowCedula,
@@ -177,9 +179,9 @@ function doPost(e) {
       return errorResponse("Usuario o contraseña incorrectos");
     }
     
-    // --- USUARIOS (CRUD) ---
+    // --- USUARIOS (CRUD en UserAdmin) ---
     if (action === 'saveUser') {
-      let sheet = getOrCreateSheet(ss, 'Users', ['Cedula', 'Nombre', 'Rol', 'Password']);
+      let sheet = getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
       const rows = sheet.getDataRange().getValues();
       let rowIndex = -1;
 
@@ -203,7 +205,7 @@ function doPost(e) {
     }
 
     if (action === 'deleteUser') {
-      let sheet = ss.getSheetByName('Users');
+      let sheet = ss.getSheetByName('UserAdmin');
       if (!sheet) return errorResponse("No existe tabla de usuarios");
       
       const rows = sheet.getDataRange().getValues();
@@ -353,5 +355,9 @@ function setup() {
     'paymentMethod', 'reference', 'amount$', 'amountBs', 
     'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
   ]);
-  getOrCreateSheet(ss, 'Users', ['Cedula', 'Nombre', 'Rol', 'Password']);
+  // ACTUALIZADO: Crea la hoja UserAdmin
+  getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
 }
+// Ejecutar esta función una vez para inicializar las hojas necesarias
+// luego eliminar o comentar esta función para evitar ejecuciones accidentales
+// setup();
