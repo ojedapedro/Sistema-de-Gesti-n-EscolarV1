@@ -82,26 +82,30 @@ function doGet(e) {
         rows.shift();
         
         // Mapeo EXACTO según la imagen proporcionada (Cols A-Q)
-        // A=0, B=1, ... M=12 (Status), N=13, O=14, P=15, Q=16
-        result = rows.map(row => ({
-          id: String(row[0]),                  // A: paymentId
-          timestamp: row[1],                   // B: timestamp
-          fechaRegistro: formatDateStr(row[2]),// C: registrationDate
-          fechaPago: formatDateStr(row[3]),    // D: paymentDate
-          cedulaRepresentante: String(row[4]), // E: representativeCedula
-          studentId: String(row[5] || ''),     // F: studentId
-          mes: String(row[6] || ''),           // G: month
-          anio: String(row[7] || ''),          // H: year
-          metodoPago: row[8],                  // I: paymentMethod
-          referencia: String(row[9]),          // J: reference
-          monto: Number(row[10]),              // K: amount$
-          montoBolivares: Number(row[11] || 0),// L: amountBs
-          estado: row[12],                     // M: status
-          observaciones: String(row[13]),      // N: observations
-          nombreRepresentante: String(row[14]),// O: representativeName
-          matricula: String(row[15]),          // P: matricula
-          formaPago: String(row[16] || '')     // Q: paymentForm
-        }));
+        result = rows.map(row => {
+          const rawMonto = row[10];
+          const rawMontoBs = row[11];
+          
+          return {
+            id: String(row[0]),
+            timestamp: row[1],
+            fechaRegistro: formatDateStr(row[2]),
+            fechaPago: formatDateStr(row[3]),
+            cedulaRepresentante: String(row[4]),
+            studentId: String(row[5] || ''),
+            mes: String(row[6] || ''),
+            anio: String(row[7] || ''),
+            metodoPago: row[8],
+            referencia: String(row[9]),
+            monto: !isNaN(Number(rawMonto)) ? Number(rawMonto) : 0,
+            montoBolivares: !isNaN(Number(rawMontoBs)) ? Number(rawMontoBs) : 0,
+            estado: row[12],
+            observaciones: String(row[13]),
+            nombreRepresentante: String(row[14]),
+            matricula: String(row[15]),
+            formaPago: String(row[16] || '')
+          };
+        });
       }
     }
     
@@ -123,6 +127,45 @@ function doPost(e) {
   const data = body.data;
 
   try {
+    // --- AUTENTICACIÓN ---
+    if (action === 'login') {
+      const { cedula, password } = data;
+
+      // 1. SUPERUSUARIO (Hardcoded)
+      // Usuario: admin (o adminpro), Clave: 230274
+      if ((cedula === 'admin' || cedula === 'superadmin') && password === '230274') {
+         return success({
+           cedula: '0000',
+           nombre: 'Super Administrador',
+           rol: 'Administrador',
+           token: 'super-token-' + new Date().getTime()
+         });
+      }
+
+      // 2. Usuarios Normales (Desde Hoja de Cálculo)
+      const sheet = ss.getSheetByName('Users');
+      if (!sheet) return errorResponse("Credenciales inválidas (BD)");
+
+      const rows = sheet.getDataRange().getValues();
+      // Asumimos columnas: Cedula (A), Nombre (B), Rol (C), Password (D)
+      // Empezamos en i=1 para saltar header
+      for (let i = 1; i < rows.length; i++) {
+        const rowCedula = String(rows[i][0]);
+        const rowPass = String(rows[i][3]); // Password en columna D
+        
+        if (rowCedula === cedula && rowPass === password) {
+          return success({
+            cedula: rowCedula,
+            nombre: String(rows[i][1]),
+            rol: String(rows[i][2]),
+            token: 'user-token-' + new Date().getTime()
+          });
+        }
+      }
+      return errorResponse("Usuario o contraseña incorrectos");
+    }
+    
+    // --- CONFIGURACIÓN ---
     if (action === 'saveConfig') {
       let sheet = getOrCreateSheet(ss, 'Config', ['Tasa', 'Fecha']);
       sheet.getRange('A2').setValue(data.tasaCambio);
@@ -172,23 +215,23 @@ function doPost(e) {
       let sheet = getOrCreateSheet(ss, 'Payments', headers);
       
       const row = [
-        data.id,                     // A
-        new Date().toISOString(),    // B
-        data.fechaRegistro,          // C
-        data.fechaPago,              // D
-        data.cedulaRepresentante,    // E
-        data.studentId || '',        // F
-        data.mes || '',              // G
-        data.anio || '',             // H
-        data.metodoPago,             // I
-        data.referencia,             // J
-        data.monto,                  // K (USD)
-        data.montoBolivares || 0,    // L (Bs)
-        data.estado,                 // M
-        data.observaciones,          // N
-        data.nombreRepresentante,    // O
-        data.matricula,              // P
-        data.formaPago               // Q
+        data.id,
+        new Date().toISOString(),
+        data.fechaRegistro,
+        data.fechaPago,
+        data.cedulaRepresentante,
+        data.studentId || '',
+        data.mes || '',
+        data.anio || '',
+        data.metodoPago,
+        data.referencia,
+        data.monto,
+        data.montoBolivares || 0,
+        data.estado,
+        data.observaciones,
+        data.nombreRepresentante,
+        data.matricula,
+        data.formaPago
       ];
       
       sheet.appendRow(row);
@@ -202,7 +245,6 @@ function doPost(e) {
       const rows = sheet.getDataRange().getValues();
       for(let i=1; i<rows.length; i++) {
         if(String(rows[i][0]) === String(data.id)) {
-          // Status está en Columna M, que es la columna 13
           sheet.getRange(i+1, 13).setValue(data.nuevoEstado);
           return success('Estado Actualizado');
         }
@@ -236,9 +278,16 @@ function formatDateStr(dateVal) {
   return `${y}-${m}-${day}`;
 }
 
-function success(msg) {
-  return ContentService.createTextOutput(JSON.stringify({status: 'success', message: msg})).setMimeType(ContentService.MimeType.JSON);
+function success(payload) {
+  // Si el payload es string, lo envolvemos en { message: ... }
+  // Si es objeto, lo devolvemos tal cual mezclado con status success
+  const response = typeof payload === 'string' 
+    ? { status: 'success', message: payload }
+    : { status: 'success', ...payload };
+    
+  return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
 }
+
 function errorResponse(msg) {
   return ContentService.createTextOutput(JSON.stringify({status: 'error', message: msg})).setMimeType(ContentService.MimeType.JSON);
 }
@@ -255,4 +304,6 @@ function setup() {
     'paymentMethod', 'reference', 'amount$', 'amountBs', 
     'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
   ]);
+  // Nueva hoja para usuarios
+  getOrCreateSheet(ss, 'Users', ['Cedula', 'Nombre', 'Rol', 'Password']);
 }

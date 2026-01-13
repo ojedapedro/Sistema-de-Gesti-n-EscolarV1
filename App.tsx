@@ -7,11 +7,30 @@ import { Verificacion } from './components/Verificacion';
 import { Reportes } from './components/Reportes';
 import { Configuracion } from './components/Configuracion';
 import { LibroContable } from './components/LibroContable';
+import { Login } from './components/Login';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Loader2 } from 'lucide-react';
 
-function App() {
+const AppContent: React.FC = () => {
+  const { user, isLoading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Si está cargando la sesión (leyendo localStorage), mostrar spinner
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-indigo-600" size={48} />
+      </div>
+    );
+  }
+
+  // Si no hay usuario, mostrar Login
+  if (!user) {
+    return <Login />;
+  }
+
+  // Router interno simple
   const renderView = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
@@ -40,6 +59,14 @@ function App() {
         </div>
       </main>
     </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

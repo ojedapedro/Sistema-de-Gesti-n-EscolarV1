@@ -1,5 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen } from 'lucide-react';
+import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen, LogOut } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { UserRole } from '../types';
 
 interface SidebarProps {
   currentView: string;
@@ -9,17 +11,58 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, toggleSidebar }) => {
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'registro', label: 'Registro Alumnos', icon: UserPlus },
-    { id: 'pagos', label: 'Caja / Pagos', icon: Banknote },
-    { id: 'verificacion', label: 'Verificación Pagos', icon: FileCheck },
-    { id: 'libro', label: 'Libro Contable', icon: BookOpen },
-    { id: 'reportes', label: 'Reportes', icon: FileText },
-    { id: 'configuracion', label: 'Configuración', icon: Settings },
-  ];
+  const { user, logout, hasRole } = useAuth();
 
   const logoUrl = "https://i.ibb.co/FbHJbvVT/images.png";
+
+  // Definir ítems y permisos
+  const allMenuItems = [
+    { 
+      id: 'dashboard', 
+      label: 'Dashboard', 
+      icon: LayoutDashboard,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR] 
+    },
+    { 
+      id: 'registro', 
+      label: 'Registro Alumnos', 
+      icon: UserPlus,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR]
+    },
+    { 
+      id: 'pagos', 
+      label: 'Caja / Pagos', 
+      icon: Banknote,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR, UserRole.CAJERO]
+    },
+    { 
+      id: 'verificacion', 
+      label: 'Verificación Pagos', 
+      icon: FileCheck,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR, UserRole.CAJERO]
+    },
+    { 
+      id: 'libro', 
+      label: 'Libro Contable', 
+      icon: BookOpen,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR, UserRole.CAJERO]
+    },
+    { 
+      id: 'reportes', 
+      label: 'Reportes', 
+      icon: FileText,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR]
+    },
+    { 
+      id: 'configuracion', 
+      label: 'Configuración', 
+      icon: Settings,
+      roles: [UserRole.ADMIN]
+    },
+  ];
+
+  // Filtrar ítems visibles para el usuario actual
+  const visibleItems = allMenuItems.filter(item => hasRole(item.roles));
 
   return (
     <>
@@ -41,11 +84,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, 
              <img src={logoUrl} alt="Logo Institucional" className="h-full w-full object-contain" />
           </div>
           <h1 className="text-xl font-bold text-indigo-400 tracking-wide">AdminPro</h1>
-          <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider">Gestión Educativa</p>
+          
+          <div className="mt-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-600">
+             <p className="text-xs text-slate-300 font-medium truncate max-w-[150px]">{user?.nombre}</p>
+             <p className="text-[10px] text-indigo-400 uppercase tracking-wider">{user?.rol}</p>
+          </div>
         </div>
         
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {menuItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -67,8 +114,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, 
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-700 text-xs text-slate-500 text-center">
-          v1.0.1 | BD: Google Sheets
+        <div className="p-4 border-t border-slate-700">
+          <button 
+            onClick={logout}
+            className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-900/30 text-red-400 hover:bg-red-900/50 rounded-lg transition-colors text-sm font-medium"
+          >
+            <LogOut size={16} />
+            <span>Cerrar Sesión</span>
+          </button>
+          <div className="mt-3 text-[10px] text-slate-600 text-center">
+             v1.1 | BD: Google Sheets
+          </div>
         </div>
       </div>
     </>

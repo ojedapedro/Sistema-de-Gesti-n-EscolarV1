@@ -1,10 +1,9 @@
-import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig } from '../types';
+import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
 class DatabaseService {
   
   private async fetchAPI(action: string, params: any = {}, method: 'GET' | 'POST' = 'GET'): Promise<any> {
-    // Si no se ha configurado la URL, devolver error o datos dummy
     if (GOOGLE_SCRIPT_URL.includes("xxxxxx")) {
       console.warn("URL de Google Script no configurada en constants.ts");
       return method === 'GET' ? [] : { status: 'error', message: 'Configurar URL API' };
@@ -16,7 +15,6 @@ class DatabaseService {
         const url = `${GOOGLE_SCRIPT_URL}?action=${action}`;
         response = await fetch(url);
       } else {
-        // Google Apps Script requiere text/plain para evitar CORS preflight complex
         response = await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           body: JSON.stringify({ action, data: params }),
@@ -26,7 +24,6 @@ class DatabaseService {
 
       const json = await response.json();
       
-      // Verificar si el backend devolvió un error explícito
       if (json && json.status === 'error') {
         throw new Error(json.message || 'Error desconocido del servidor');
       }
@@ -39,8 +36,20 @@ class DatabaseService {
     }
   }
 
+  // --- Auth ---
+  async login(cedula: string, password: string): Promise<User> {
+    // Si la llamada falla, fetchAPI lanzará el error con el mensaje del servidor
+    const response = await this.fetchAPI('login', { cedula, password }, 'POST');
+    // El backend devuelve { status: 'success', cedula, nombre, rol, token }
+    return {
+      cedula: response.cedula,
+      nombre: response.nombre,
+      rol: response.rol,
+      token: response.token
+    };
+  }
+
   // --- Configuración ---
-  
   async getConfig(): Promise<SystemConfig> {
     try {
       const config = await this.fetchAPI('getConfig');
@@ -55,7 +64,6 @@ class DatabaseService {
   }
 
   // --- Niveles y Precios ---
-
   async getNiveles(): Promise<NivelConfig[]> {
     try {
       const data = await this.fetchAPI('getNiveles');
@@ -70,7 +78,6 @@ class DatabaseService {
   }
 
   // --- Representantes ---
-
   async getRepresentantes(): Promise<Representante[]> {
     const data = await this.fetchAPI('getRepresentantes');
     return Array.isArray(data) ? data : [];
@@ -86,7 +93,6 @@ class DatabaseService {
   }
 
   // --- Pagos ---
-
   async getPagos(): Promise<RegistroPago[]> {
     const data = await this.fetchAPI('getPagos');
     return Array.isArray(data) ? data : [];
@@ -97,38 +103,24 @@ class DatabaseService {
   }
 
   async updateEstadoPago(id: string, referencia: string, cedula: string, nuevoEstado: EstadoPago): Promise<void> {
-    // Necesitamos referencia y cedula para encontrar la fila exacta en el script simple
     await this.fetchAPI('updateEstadoPago', { id, referencia, cedulaRepresentante: cedula, nuevoEstado }, 'POST');
   }
 
   // --- Lógica de Negocio (Helpers Locales) ---
-
   generarMatricula(cedula: string): string {
     return `mat-${ANIO_ESCOLAR_ACTUAL}-${cedula}`;
   }
 
-  /**
-   * Calcula los meses transcurridos del año escolar (Iniciando en Septiembre).
-   * Septiembre = 1, Octubre = 2, ...
-   * Esto permite calcular la deuda acumulada a la fecha.
-   */
   private getMesesEscolaresTranscurridos(): number {
     const now = new Date();
-    const currentMonth = now.getMonth(); // 0 = Enero, 8 = Septiembre
-    
-    // Lógica para año escolar que inicia en Septiembre (Index 8)
+    const currentMonth = now.getMonth(); 
     let meses = 0;
     
     if (currentMonth >= 8) { 
-       // Sept(8) -> 1, Oct(9) -> 2, Nov(10) -> 3, Dic(11) -> 4
        meses = currentMonth - 7; 
     } else { 
-       // Ene(0) -> 5, Feb(1) -> 6 ... Ago(7) -> 12
-       // Sept(1) + Oct(1) + Nov(1) + Dic(1) = 4 meses previos
        meses = 4 + (currentMonth + 1);
     }
-    
-    // Devolvemos al menos 1 (Mes de Inscripción/Inicio)
     return Math.max(1, meses);
   }
 
@@ -136,33 +128,23 @@ class DatabaseService {
     const rep = await this.getRepresentanteByCedula(cedula);
     if (!rep) return 0;
 
-    // Obtener precios actualizados de la BD
     const nivelesConfig = await this.getNiveles();
     
-    // 1. Calcular DEUDA ESPERADA ACUMULADA (Lo que debería haber pagado hasta hoy)
     const mesesTranscurridos = this.getMesesEscolaresTranscurridos();
     let deudaTotalEsperada = 0;
     
     rep.alumnos.forEach(alumno => {
        const configNivel = nivelesConfig.find(n => n.nivel === alumno.nivel);
        const precioMensual = configNivel ? configNivel.precio : (MENSUALIDADES[alumno.nivel] || 0);
-       
-       // Costo = (Mensualidad * MesesTranscurridos) + Inscripción (Asumimos inscripción = 1 mensualidad extra)
-       // Total meses a cobrar = mesesTranscurridos + 1 (Inscripción)
        const mesesCobranza = mesesTranscurridos + 1; 
-       
        deudaTotalEsperada += (precioMensual * mesesCobranza);
     });
 
-    // 2. Calcular TOTAL PAGADO (Solo verificados)
     const pagos = await this.getPagos();
     const totalPagado = pagos
       .filter(p => p.cedulaRepresentante === cedula && p.estado === EstadoPago.VERIFICADO)
       .reduce((sum, p) => sum + p.monto, 0);
 
-    // 3. Retornar Saldo Real
-    // Si es Positivo (> 0): Debe dinero.
-    // Si es Negativo (< 0): Tiene saldo a favor (pagó por adelantado).
     return deudaTotalEsperada - totalPagado;
   }
 }

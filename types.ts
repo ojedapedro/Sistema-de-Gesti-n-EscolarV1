@@ -35,6 +35,20 @@ export enum EstadoPago {
   RECHAZADO = 'Rechazado',
 }
 
+// Roles de Usuario
+export enum UserRole {
+  ADMIN = 'Administrador',
+  AUXILIAR = 'Auxiliar Administrativo',
+  CAJERO = 'Cajero',
+}
+
+export interface User {
+  cedula: string;
+  nombre: string;
+  rol: UserRole;
+  token?: string;
+}
+
 // Configuración de Precio por Nivel
 export interface NivelConfig {
   nivel: string;
