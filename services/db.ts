@@ -128,9 +128,13 @@ class DatabaseService {
     const currentMonth = now.getMonth(); 
     let meses = 0;
     
+    // Septiembre es mes 8 (0-indexado)
+    // Sept (8) -> 1 mes deuda
+    // Oct (9) -> 2 meses deuda
     if (currentMonth >= 8) { 
        meses = currentMonth - 7; 
     } else { 
+       // Enero (0) -> 4 (sep-dic) + 1 = 5
        meses = 4 + (currentMonth + 1);
     }
     return Math.max(1, meses);
@@ -148,7 +152,11 @@ class DatabaseService {
     rep.alumnos.forEach(alumno => {
        const configNivel = nivelesConfig.find(n => n.nivel === alumno.nivel);
        const precioMensual = configNivel ? configNivel.precio : (MENSUALIDADES[alumno.nivel] || 0);
-       const mesesCobranza = mesesTranscurridos + 1; 
+       
+       // CORRECCIÓN: Se elimina el +1 que asumía inscripción o mes extra.
+       // La deuda es estrictamente: precio * meses escolares pasados.
+       const mesesCobranza = mesesTranscurridos; 
+       
        deudaTotalEsperada += (precioMensual * mesesCobranza);
     });
 

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { Representante, MetodoPago, EstadoPago, RegistroPago } from '../types';
-import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
+import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
+import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
 import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
@@ -15,6 +16,7 @@ export const Pagos: React.FC = () => {
   const [saldoReal, setSaldoReal] = useState(0);
   
   const [tasaCambio, setTasaCambio] = useState(0);
+  const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingRep, setLoadingRep] = useState(false);
 
@@ -37,7 +39,13 @@ export const Pagos: React.FC = () => {
   const meses = ['Inscripción', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto'];
 
   useEffect(() => {
-    db.getConfig().then(c => setTasaCambio(c.tasaCambio || 0));
+    const init = async () => {
+      const c = await db.getConfig();
+      setTasaCambio(c.tasaCambio || 0);
+      const n = await db.getNiveles();
+      setNivelesConfig(n);
+    };
+    init();
   }, []);
 
   const buscarRepresentante = async () => {
@@ -85,6 +93,16 @@ export const Pagos: React.FC = () => {
     }
   };
 
+  // Helper para calcular la mensualidad familiar total
+  const calcularMensualidadFamiliar = () => {
+    if (!representante) return 0;
+    return representante.alumnos.reduce((acc, alu) => {
+      const config = nivelesConfig.find(n => n.nivel === alu.nivel);
+      const precio = config ? config.precio : (MENSUALIDADES[alu.nivel] || 0);
+      return acc + precio;
+    }, 0);
+  };
+
   const procesarPago = async () => {
     if (!representante || !monto || !referencia) {
       setError('Complete todos los campos del pago');
@@ -108,8 +126,7 @@ export const Pagos: React.FC = () => {
         if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
     }
 
-    // Calcular Nuevo Saldo (Matemática simple: Saldo Actual - Pago)
-    // Si saldoReal era 100 (deuda) y paga 120, nuevo saldo es -20 (crédito)
+    // Calcular Nuevo Saldo
     const nuevoSaldo = saldoReal - montoNum;
     const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
 
@@ -155,32 +172,25 @@ export const Pagos: React.FC = () => {
 
   const generarReciboPDF = () => {
     if (!pagoExitoso || !representante) return;
-
     try {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.width;
         
-        // --- Header ---
         doc.setFillColor(63, 81, 181);
         doc.rect(0, 0, pageWidth, 40, 'F');
-        
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
-        // Título dinámico
         const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "RECIBO DE ABONO";
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
-        
         doc.setFontSize(12);
         doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
 
-        // --- Info General ---
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(10);
         doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
         doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 56);
         
-        // --- Datos Representante ---
         doc.setDrawColor(200, 200, 200);
         doc.line(14, 62, pageWidth - 14, 62);
         
@@ -193,7 +203,6 @@ export const Pagos: React.FC = () => {
         doc.text(`Cédula: ${representante.cedula}`, 14, 84);
         doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
 
-        // --- Detalles Transacción ---
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
         doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
@@ -204,14 +213,12 @@ export const Pagos: React.FC = () => {
         const col2 = pageWidth / 2;
 
         doc.text(`Concepto: ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
-        
         let nombreAlumno = "Todos / Varios";
         if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
             const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
             if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
         }
         doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
-        
         doc.text(`Método: ${pagoExitoso.metodoPago}`, col2, startY);
         doc.text(`Ref: ${pagoExitoso.referencia}`, col2, startY + 8);
 
@@ -219,7 +226,6 @@ export const Pagos: React.FC = () => {
             doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
         }
 
-        // --- Caja de Montos ---
         const boxY = 150;
         doc.setDrawColor(0, 0, 0);
         doc.setFillColor(245, 247, 250);
@@ -227,19 +233,14 @@ export const Pagos: React.FC = () => {
 
         doc.setFont("helvetica", "bold");
         doc.text("ESTADO DE CUENTA", 20, boxY + 10);
-        
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
-        // Estado Previo
         const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Deuda):" : "Saldo Anterior (A Favor):";
         doc.text(textoSaldoAnt, 20, boxY + 20);
-        // Mostrar absoluto para no confundir con signos negativos en el recibo impreso si no se desea
-        // Pero financieramente: Negativo es a favor.
         const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
         doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
 
-        // Monto Pagado
         doc.text("Monto Cancelado (-):", 20, boxY + 28);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(0, 100, 0);
@@ -258,24 +259,14 @@ export const Pagos: React.FC = () => {
         doc.setDrawColor(200);
         doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
 
-        // Saldo Final
         doc.setFont("helvetica", "bold");
-        
         let labelFinal = "SALDO PENDIENTE:";
         if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
-        
         doc.text(labelFinal, 20, boxY + 45);
-        
-        if (saldoFinalRecibo > 0) {
-             doc.setTextColor(200, 0, 0); // Rojo Deuda
-        } else {
-             doc.setTextColor(0, 150, 0); // Verde Crédito
-        }
-        
-        // Mostrar absoluto con indicativo
+        if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); 
+        else doc.setTextColor(0, 150, 0);
         doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
-        // --- Footer ---
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
@@ -295,13 +286,12 @@ export const Pagos: React.FC = () => {
 
   const resetearVista = () => {
     setPagoExitoso(null);
-    setSaldoReal(saldoFinalRecibo); // Actualizar el saldo visual en pantalla
+    setSaldoReal(saldoFinalRecibo); 
   };
 
   // --- VISTA: PAGO EXITOSO / RECIBO ---
   if (pagoExitoso && representante) {
     const esSaldoFavor = saldoFinalRecibo <= 0;
-    
     return (
         <div className="max-w-2xl mx-auto mt-8">
             <div className={`rounded-2xl shadow-lg overflow-hidden border ${esSaldoFavor ? 'border-green-100' : 'border-indigo-100'} bg-white`}>
@@ -310,11 +300,7 @@ export const Pagos: React.FC = () => {
                         <CheckCircle size={32} />
                     </div>
                     <h2 className="text-2xl font-bold">¡Transacción Registrada!</h2>
-                    <p className="opacity-90 mt-1">
-                        {esSaldoFavor 
-                         ? 'El pago cubre la deuda y genera saldo a favor.' 
-                         : 'Abono registrado. Aún queda saldo pendiente.'}
-                    </p>
+                    <p className="opacity-90 mt-1">{esSaldoFavor ? 'Saldo a favor generado.' : 'Abono registrado correctamente.'}</p>
                 </div>
                 
                 <div className="p-8 space-y-6">
@@ -322,45 +308,22 @@ export const Pagos: React.FC = () => {
                         <span className="text-gray-500">Monto Registrado:</span>
                         <div className="text-right">
                              <span className="text-xl font-bold text-gray-800 block">${(pagoExitoso.monto || 0).toFixed(2)}</span>
-                             {pagoExitoso.montoBolivares && (
-                                <span className="text-sm text-gray-500">Bs. {pagoExitoso.montoBolivares.toFixed(2)}</span>
-                             )}
+                             {pagoExitoso.montoBolivares && (<span className="text-sm text-gray-500">Bs. {pagoExitoso.montoBolivares.toFixed(2)}</span>)}
                         </div>
                     </div>
-                    
                     <div className="flex justify-between items-center border-b pb-4">
-                        <span className="text-gray-500">Nuevo Saldo Real:</span>
+                        <span className="text-gray-500">Nuevo Saldo:</span>
                         <div className="text-right">
                             <span className={`text-xl font-bold ${esSaldoFavor ? 'text-green-600' : 'text-red-600'}`}>
                                 {esSaldoFavor ? '-' : ''}${Math.abs(saldoFinalRecibo).toFixed(2)}
                             </span>
-                            <span className="block text-xs text-gray-400">
-                                {esSaldoFavor ? '(Crédito a Favor)' : '(Deuda Pendiente)'}
-                            </span>
                         </div>
                     </div>
-
-                    <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600">
-                        <p><strong>Referencia:</strong> {pagoExitoso.referencia}</p>
-                        <p><strong>Método:</strong> {pagoExitoso.metodoPago}</p>
-                        {pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION && (
-                            <p className="mt-2 text-xs text-orange-600 flex items-center gap-1">
-                                <RefreshCw size={12}/> Requiere verificación administrativa.
-                            </p>
-                        )}
-                    </div>
-
                     <div className="flex gap-4 pt-2">
-                        <button 
-                            onClick={generarReciboPDF}
-                            className="flex-1 bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-700 flex justify-center items-center gap-2 shadow-lg transition-transform hover:-translate-y-1"
-                        >
+                        <button onClick={generarReciboPDF} className="flex-1 bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-700 flex justify-center items-center gap-2 shadow-lg">
                             <Printer size={20} /> Descargar Recibo
                         </button>
-                        <button 
-                            onClick={resetearVista}
-                            className="flex-1 bg-white text-slate-700 border-2 border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-50 flex justify-center items-center gap-2"
-                        >
+                        <button onClick={resetearVista} className="flex-1 bg-white text-slate-700 border-2 border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-50 flex justify-center items-center gap-2">
                             <ArrowLeft size={20} /> Volver a Caja
                         </button>
                     </div>
@@ -371,6 +334,8 @@ export const Pagos: React.FC = () => {
   }
 
   // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
+  const mensualidadFamiliar = calcularMensualidadFamiliar();
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -424,9 +389,15 @@ export const Pagos: React.FC = () => {
 
               {/* TARJETA DE SALDO REAL */}
               <div className={`mt-6 p-4 rounded-lg border shadow-sm ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+                {/* Desglose de Mensualidad Regular */}
+                <div className="flex justify-between items-center border-b border-gray-300/30 pb-2 mb-2">
+                    <span className="text-xs font-semibold text-gray-600">Mensualidad Familiar:</span>
+                    <span className="text-sm font-bold text-slate-700">${mensualidadFamiliar.toFixed(2)}</span>
+                </div>
+
                 <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
                    {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                   {saldoReal > 0 ? 'Saldo Pendiente (Deuda)' : 'Saldo a Favor (Crédito)'}
+                   {saldoReal > 0 ? 'Deuda Total Acumulada' : 'Saldo a Favor (Crédito)'}
                 </p>
                 <div className="flex flex-col">
                   <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
@@ -435,8 +406,13 @@ export const Pagos: React.FC = () => {
                   <span className={`text-sm font-medium ${saldoReal > 0 ? 'text-orange-400' : 'text-green-500'}`}>
                     ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
                   </span>
+                  {saldoReal > 0 && mensualidadFamiliar > 0 && (
+                      <p className="text-[10px] text-orange-700 mt-2 bg-orange-100 p-1 rounded px-2">
+                          Equivale a aprox. <strong>{(saldoReal / mensualidadFamiliar).toFixed(1)}</strong> meses pendientes.
+                      </p>
+                  )}
                   <p className="text-[10px] text-gray-500 mt-2 leading-tight">
-                    * Calculado al día de hoy basado en mensualidades acumuladas menos pagos verificados.
+                    * Deuda calculada al día de hoy sumando meses escolares transcurridos menos abonos verificados.
                   </p>
                 </div>
               </div>
