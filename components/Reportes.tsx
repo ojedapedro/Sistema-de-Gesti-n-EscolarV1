@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { jsPDF } from 'jspdf';
@@ -78,13 +79,33 @@ export const Reportes: React.FC = () => {
     }
   };
 
+  const getMesesEscolares = () => {
+    const now = new Date();
+    const currentMonth = now.getMonth(); 
+    let meses = 0;
+    // Septiembre (8) starts year. 
+    // If current is Sept (8) => 1 month due.
+    // If current is Jan (0) => Sept, Oct, Nov, Dec (4) + Jan (1) = 5.
+    if (currentMonth >= 8) { 
+       meses = currentMonth - 7; 
+    } else { 
+       meses = 4 + (currentMonth + 1);
+    }
+    return Math.max(1, meses);
+  };
+
   const calcularSolvencias = (reps: Representante[], _pagos: RegistroPago[], niveles: NivelConfig[]) => {
+    const mesesTranscurridos = getMesesEscolares();
+
     const resultados: DeudaCalculada[] = reps.map(rep => {
       let deudaEsperadaTotal = 0;
       
       const detallesAlumnos: DetalleAlumnoDeuda[] = rep.alumnos.map(alu => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
-        const precio = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
+        const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
+        
+        // Deuda acumulada del estudiante hasta la fecha (Precio Mensual * Meses Transcurridos)
+        const costoTotalAlumno = precioMensual * mesesTranscurridos;
         
         // Pagos específicos a este alumno
         const pagosAlumno = _pagos.filter(p => 
@@ -95,15 +116,15 @@ export const Reportes: React.FC = () => {
         
         const totalPagadoAlu = pagosAlumno.reduce((acc, p) => acc + (p.monto || 0), 0);
         
-        deudaEsperadaTotal += precio;
+        deudaEsperadaTotal += costoTotalAlumno;
 
         return {
           nombre: `${alu.nombres} ${alu.apellidos}`,
           nivel: alu.nivel,
           seccion: alu.seccion,
-          costo: precio,
+          costo: costoTotalAlumno,
           pagado: totalPagadoAlu,
-          pendiente: Math.max(0, precio - totalPagadoAlu)
+          pendiente: Math.max(0, costoTotalAlumno - totalPagadoAlu)
         };
       });
 
@@ -112,6 +133,7 @@ export const Reportes: React.FC = () => {
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
+      // El saldo pendiente global toma en cuenta todos los pagos, incluso si no están asignados a un alumno específico
       const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
 
       return {
@@ -464,7 +486,7 @@ export const Reportes: React.FC = () => {
                                     <tr>
                                       <th className="px-4 py-2 text-left">Alumno</th>
                                       <th className="px-4 py-2 text-left">Nivel</th>
-                                      <th className="px-4 py-2 text-right">Costo Asignado</th>
+                                      <th className="px-4 py-2 text-right">Costo Asignado (Acumulado)</th>
                                       <th className="px-4 py-2 text-right">Pagado (Verificado)</th>
                                       <th className="px-4 py-2 text-right">Pendiente</th>
                                     </tr>
