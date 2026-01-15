@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
@@ -55,7 +55,7 @@ export const Pagos: React.FC = () => {
     setError('');
     setPagoExitoso(null);
     try {
-      // Recargar tasa al buscar para asegurar frescura, a menos que el usuario ya la haya editado manualmente en esta sesión
+      // Recargar tasa al buscar para asegurar frescura
       if (tasaCambio === 0) {
           const c = await db.getConfig();
           setTasaCambio(c.tasaCambio || 0);
@@ -82,12 +82,10 @@ export const Pagos: React.FC = () => {
     return [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(m);
   };
 
-  // Manejo de cambio de Tasa Manual
   const handleTasaChange = (val: string) => {
     const nuevaTasa = parseFloat(val);
     setTasaCambio(isNaN(nuevaTasa) ? 0 : nuevaTasa);
 
-    // Recalcular montos en formulario si existen
     if (!isNaN(nuevaTasa) && nuevaTasa > 0 && monto) {
         if (isMetodoBolivares(metodo)) {
              setMontoBs((parseFloat(monto) * nuevaTasa).toFixed(2));
@@ -152,7 +150,6 @@ export const Pagos: React.FC = () => {
     const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodo);
     const estadoInicial = requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
     
-    // Calcular nombre estudiante
     let nombreEstudiante = "VARIOS";
     if (studentId && studentId !== "VARIOS") {
         const est = representante.alumnos.find(a => a.id === studentId);
@@ -269,7 +266,6 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
-        // Cambiado de "Deuda" a "Pendiente" para consistencia
         const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
         doc.text(textoSaldoAnt, 20, boxY + 20);
         const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
@@ -301,30 +297,19 @@ export const Pagos: React.FC = () => {
         else doc.setTextColor(0, 150, 0);
         doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 225);
-        if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
-            doc.setFontSize(8);
-            doc.setTextColor(150);
-            doc.text("* Pago sujeto a verificación bancaria. El saldo se actualizará tras validación.", 14, 230);
-        }
-
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
-        console.error("Error al generar PDF:", e);
         alert("Error al generar el PDF.");
     }
   };
 
-  const resetearVista = () => {
-    setPagoExitoso(null);
-    setSaldoReal(saldoFinalRecibo); 
-  };
-
   // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
   const mensualidadFamiliar = calcularMensualidadFamiliar();
+  
+  // Lógica de desglose para visualización
+  // Si saldoReal > 0, una parte es el mes actual, el resto es deuda vencida
+  const deudaVencida = Math.max(0, saldoReal - mensualidadFamiliar);
+  const deudaMesActual = saldoReal > 0 ? Math.min(saldoReal, mensualidadFamiliar) : 0;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -334,7 +319,6 @@ export const Pagos: React.FC = () => {
             <DollarSign className="text-green-600" /> Caja / Registrar Pago
           </h2>
           
-          {/* TASA DE CAMBIO EDITABLE */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-lg shadow-sm">
             <span className="text-xs font-bold text-gray-500 pl-2">Tasa BCV:</span>
             <div className="relative">
@@ -349,9 +333,8 @@ export const Pagos: React.FC = () => {
             </div>
             <button 
                 onClick={guardarTasaManual} 
-                title="Guardar esta tasa en el sistema" 
-                className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
                 disabled={savingTasa}
+                className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
             >
                 {savingTasa ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             </button>
@@ -398,17 +381,12 @@ export const Pagos: React.FC = () => {
 
               {/* TARJETA DE SALDO REAL */}
               <div className={`mt-6 p-4 rounded-lg border shadow-sm ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-                {/* Desglose de Mensualidad Regular */}
-                <div className="flex justify-between items-center border-b border-gray-300/30 pb-2 mb-2">
-                    <span className="text-xs font-semibold text-gray-600">Mensualidad del Mes:</span>
-                    <span className="text-sm font-bold text-slate-700">${mensualidadFamiliar.toFixed(2)}</span>
-                </div>
-
                 <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
                    {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                   {saldoReal > 0 ? 'Saldo Actual a la Fecha' : 'Saldo a Favor (Crédito)'}
+                   {saldoReal > 0 ? 'Total a Pagar (Hoy)' : 'Saldo a Favor (Crédito)'}
                 </p>
-                <div className="flex flex-col">
+                
+                <div className="flex flex-col mb-2">
                   <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
                     ${Math.abs(saldoReal).toFixed(2)}
                   </span>
@@ -416,9 +394,26 @@ export const Pagos: React.FC = () => {
                     ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
                   </span>
                 </div>
-                <div className="mt-2 text-[10px] text-gray-500 leading-tight">
-                    * Incluye la mensualidad del mes actual más cualquier deuda acumulada de meses anteriores.
-                </div>
+
+                {/* DESGLOSE EXACTO: MES ACTUAL + ATRASOS */}
+                {saldoReal > 0 && (
+                  <div className="mt-3 bg-white/60 p-2 rounded text-xs text-gray-700 border border-gray-100">
+                     <div className="flex justify-between items-center mb-1 border-b border-gray-200 pb-1">
+                        <span className="flex items-center gap-1"><Calendar size={10} /> Mes en Curso:</span>
+                        <span className="font-bold">${deudaMesActual.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center pt-1 text-red-600">
+                        <span className="flex items-center gap-1"><Clock size={10} /> Atrasos Vencidos:</span>
+                        <span className="font-bold">${deudaVencida.toFixed(2)}</span>
+                     </div>
+                  </div>
+                )}
+
+                {saldoReal <= 0 && (
+                  <div className="mt-2 text-[10px] text-green-700 leading-tight">
+                    * El representante se encuentra solvente al día de hoy.
+                  </div>
+                )}
               </div>
             </div>
           </div>
