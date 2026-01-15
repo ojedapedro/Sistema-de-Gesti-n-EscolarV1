@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
@@ -19,6 +19,7 @@ export const Pagos: React.FC = () => {
   const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingRep, setLoadingRep] = useState(false);
+  const [savingTasa, setSavingTasa] = useState(false);
 
   // Estado del Formulario
   const [monto, setMonto] = useState('');
@@ -54,6 +55,13 @@ export const Pagos: React.FC = () => {
     setError('');
     setPagoExitoso(null);
     try {
+      // Recargar tasa al buscar para asegurar frescura, a menos que el usuario ya la haya editado manualmente en esta sesión
+      // (Opcional: aquí forzamos la recarga de configuración si se desea, pero respetaremos la edición actual si es diferente de 0)
+      if (tasaCambio === 0) {
+          const c = await db.getConfig();
+          setTasaCambio(c.tasaCambio || 0);
+      }
+
       const rep = await db.getRepresentanteByCedula(busquedaCedula);
       if (rep) {
         setRepresentante(rep);
@@ -73,6 +81,32 @@ export const Pagos: React.FC = () => {
 
   const isMetodoBolivares = (m: MetodoPago) => {
     return [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(m);
+  };
+
+  // Manejo de cambio de Tasa Manual
+  const handleTasaChange = (val: string) => {
+    const nuevaTasa = parseFloat(val);
+    setTasaCambio(isNaN(nuevaTasa) ? 0 : nuevaTasa);
+
+    // Recalcular montos en formulario si existen
+    if (!isNaN(nuevaTasa) && nuevaTasa > 0 && monto) {
+        if (isMetodoBolivares(metodo)) {
+             setMontoBs((parseFloat(monto) * nuevaTasa).toFixed(2));
+        }
+    }
+  };
+
+  const guardarTasaManual = async () => {
+    if (tasaCambio <= 0) return;
+    setSavingTasa(true);
+    try {
+        await db.saveConfig({ tasaCambio, fechaActualizacion: new Date().toISOString() });
+        alert("Tasa actualizada correctamente en el sistema.");
+    } catch (e) {
+        alert("Error al guardar la tasa.");
+    } finally {
+        setSavingTasa(false);
+    }
   };
 
   const handleMontoBsChange = (val: string) => {
@@ -343,9 +377,28 @@ export const Pagos: React.FC = () => {
           <h2 className="text-xl font-bold flex items-center gap-2">
             <DollarSign className="text-green-600" /> Caja / Registrar Pago
           </h2>
-          <div className="flex items-center gap-2 text-sm bg-indigo-50 px-3 py-1 rounded-full text-indigo-700">
-            <RefreshCw size={14} />
-            <span>Tasa Actual: <strong>Bs. {(tasaCambio || 0).toFixed(2)}</strong></span>
+          
+          {/* TASA DE CAMBIO EDITABLE */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-lg shadow-sm">
+            <span className="text-xs font-bold text-gray-500 pl-2">Tasa BCV:</span>
+            <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">Bs.</span>
+                <input
+                    type="number"
+                    value={tasaCambio}
+                    onChange={(e) => handleTasaChange(e.target.value)}
+                    className="w-24 pl-8 pr-2 py-1 border border-indigo-100 rounded bg-indigo-50 text-indigo-700 font-bold text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="0.00"
+                />
+            </div>
+            <button 
+                onClick={guardarTasaManual} 
+                title="Guardar esta tasa en el sistema" 
+                className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                disabled={savingTasa}
+            >
+                {savingTasa ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            </button>
           </div>
         </div>
         

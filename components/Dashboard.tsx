@@ -61,13 +61,15 @@ export const Dashboard: React.FC = () => {
   const totalMesBs = pagosDelMes.reduce((acc, p) => acc + (p.montoBolivares || 0), 0);
 
   // Datos para Gráfico Simple (Por Método de Pago en USD)
-  const metodosData = pagosDelMes.reduce((acc, p) => {
-    const key = p.metodoPago;
-    acc[key] = (acc[key] || 0) + p.monto;
+  const metodosData = pagosDelMes.reduce<Record<string, number>>((acc, p) => {
+    const key = String(p.metodoPago);
+    const current = acc[key] || 0;
+    acc[key] = current + (p.monto || 0);
     return acc;
-  }, {} as Record<string, number>);
+  }, {});
 
-  const maxValChart = Math.max(...Object.values(metodosData), 1); // Para calcular porcentajes de barra
+  const values = Object.values(metodosData);
+  const maxValChart = values.length > 0 ? Math.max(...values, 1) : 1;
   const metodosOrdenados = Object.entries(metodosData).sort((a,b) => b[1] - a[1]);
 
   return (
