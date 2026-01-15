@@ -269,6 +269,7 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
+        // Cambiado de "Deuda" a "Pendiente" para consistencia
         const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
         doc.text(textoSaldoAnt, 20, boxY + 20);
         const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
