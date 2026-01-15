@@ -56,7 +56,6 @@ export const Pagos: React.FC = () => {
     setPagoExitoso(null);
     try {
       // Recargar tasa al buscar para asegurar frescura, a menos que el usuario ya la haya editado manualmente en esta sesión
-      // (Opcional: aquí forzamos la recarga de configuración si se desea, pero respetaremos la edición actual si es diferente de 0)
       if (tasaCambio === 0) {
           const c = await db.getConfig();
           setTasaCambio(c.tasaCambio || 0);
@@ -270,7 +269,7 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
-        const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Deuda):" : "Saldo Anterior (A Favor):";
+        const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
         doc.text(textoSaldoAnt, 20, boxY + 20);
         const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
         doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
@@ -322,50 +321,6 @@ export const Pagos: React.FC = () => {
     setPagoExitoso(null);
     setSaldoReal(saldoFinalRecibo); 
   };
-
-  // --- VISTA: PAGO EXITOSO / RECIBO ---
-  if (pagoExitoso && representante) {
-    const esSaldoFavor = saldoFinalRecibo <= 0;
-    return (
-        <div className="max-w-2xl mx-auto mt-8">
-            <div className={`rounded-2xl shadow-lg overflow-hidden border ${esSaldoFavor ? 'border-green-100' : 'border-indigo-100'} bg-white`}>
-                <div className={`${esSaldoFavor ? 'bg-green-600' : 'bg-indigo-600'} p-6 text-white text-center`}>
-                    <div className={`bg-white ${esSaldoFavor ? 'text-green-600' : 'text-indigo-600'} w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-md`}>
-                        <CheckCircle size={32} />
-                    </div>
-                    <h2 className="text-2xl font-bold">¡Transacción Registrada!</h2>
-                    <p className="opacity-90 mt-1">{esSaldoFavor ? 'Saldo a favor generado.' : 'Abono registrado correctamente.'}</p>
-                </div>
-                
-                <div className="p-8 space-y-6">
-                    <div className="flex justify-between items-center border-b pb-4">
-                        <span className="text-gray-500">Monto Registrado:</span>
-                        <div className="text-right">
-                             <span className="text-xl font-bold text-gray-800 block">${(pagoExitoso.monto || 0).toFixed(2)}</span>
-                             {pagoExitoso.montoBolivares && (<span className="text-sm text-gray-500">Bs. {pagoExitoso.montoBolivares.toFixed(2)}</span>)}
-                        </div>
-                    </div>
-                    <div className="flex justify-between items-center border-b pb-4">
-                        <span className="text-gray-500">Nuevo Saldo:</span>
-                        <div className="text-right">
-                            <span className={`text-xl font-bold ${esSaldoFavor ? 'text-green-600' : 'text-red-600'}`}>
-                                {esSaldoFavor ? '-' : ''}${Math.abs(saldoFinalRecibo).toFixed(2)}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="flex gap-4 pt-2">
-                        <button onClick={generarReciboPDF} className="flex-1 bg-slate-800 text-white py-3 rounded-xl font-bold hover:bg-slate-700 flex justify-center items-center gap-2 shadow-lg">
-                            <Printer size={20} /> Descargar Recibo
-                        </button>
-                        <button onClick={resetearVista} className="flex-1 bg-white text-slate-700 border-2 border-slate-200 py-3 rounded-xl font-bold hover:bg-slate-50 flex justify-center items-center gap-2">
-                            <ArrowLeft size={20} /> Volver a Caja
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-  }
 
   // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
   const mensualidadFamiliar = calcularMensualidadFamiliar();
@@ -450,7 +405,7 @@ export const Pagos: React.FC = () => {
 
                 <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
                    {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                   {saldoReal > 0 ? 'Deuda Total Acumulada' : 'Saldo a Favor (Crédito)'}
+                   {saldoReal > 0 ? 'Saldo Pendiente' : 'Saldo a Favor (Crédito)'}
                 </p>
                 <div className="flex flex-col">
                   <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
@@ -459,14 +414,6 @@ export const Pagos: React.FC = () => {
                   <span className={`text-sm font-medium ${saldoReal > 0 ? 'text-orange-400' : 'text-green-500'}`}>
                     ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
                   </span>
-                  {saldoReal > 0 && mensualidadFamiliar > 0 && (
-                      <p className="text-[10px] text-orange-700 mt-2 bg-orange-100 p-1 rounded px-2">
-                          Equivale a aprox. <strong>{(saldoReal / mensualidadFamiliar).toFixed(1)}</strong> meses pendientes.
-                      </p>
-                  )}
-                  <p className="text-[10px] text-gray-500 mt-2 leading-tight">
-                    * Deuda calculada al día de hoy sumando meses escolares transcurridos menos abonos verificados.
-                  </p>
                 </div>
               </div>
             </div>
