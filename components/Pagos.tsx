@@ -294,7 +294,7 @@ export const Pagos: React.FC = () => {
         doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
 
         doc.setFont("helvetica", "bold");
-        let labelFinal = "SALDO PENDIENTE:";
+        let labelFinal = "SALDO ACTUAL:";
         if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
         doc.text(labelFinal, 20, boxY + 45);
         if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); 
@@ -400,13 +400,13 @@ export const Pagos: React.FC = () => {
               <div className={`mt-6 p-4 rounded-lg border shadow-sm ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
                 {/* Desglose de Mensualidad Regular */}
                 <div className="flex justify-between items-center border-b border-gray-300/30 pb-2 mb-2">
-                    <span className="text-xs font-semibold text-gray-600">Mensualidad Familiar:</span>
+                    <span className="text-xs font-semibold text-gray-600">Mensualidad del Mes:</span>
                     <span className="text-sm font-bold text-slate-700">${mensualidadFamiliar.toFixed(2)}</span>
                 </div>
 
                 <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
                    {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                   {saldoReal > 0 ? 'Saldo Pendiente' : 'Saldo a Favor (Crédito)'}
+                   {saldoReal > 0 ? 'Saldo Actual a la Fecha' : 'Saldo a Favor (Crédito)'}
                 </p>
                 <div className="flex flex-col">
                   <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
@@ -415,6 +415,9 @@ export const Pagos: React.FC = () => {
                   <span className={`text-sm font-medium ${saldoReal > 0 ? 'text-orange-400' : 'text-green-500'}`}>
                     ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
                   </span>
+                </div>
+                <div className="mt-2 text-[10px] text-gray-500 leading-tight">
+                    * Incluye la mensualidad del mes actual más cualquier deuda acumulada de meses anteriores.
                 </div>
               </div>
             </div>
