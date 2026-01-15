@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
-import { REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
+import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
 import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
@@ -147,8 +147,12 @@ export const Pagos: React.FC = () => {
     }
 
     setLoading(true);
-    const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodo);
-    const estadoInicial = requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
+
+    // LÓGICA DE VERIFICACIÓN:
+    // Si la referencia empieza con 'OV-' (Oficina Virtual), queda pendiente.
+    // Si no, se asume que el administrativo lo está cargando y ya está verificado.
+    const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
+    const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
     
     let nombreEstudiante = "VARIOS";
     if (studentId && studentId !== "VARIOS") {
@@ -297,6 +301,16 @@ export const Pagos: React.FC = () => {
         else doc.setTextColor(0, 150, 0);
         doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 225);
+        if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text("* Pago sujeto a verificación bancaria. El saldo se actualizará tras validación.", 14, 230);
+        }
+
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
         alert("Error al generar el PDF.");
@@ -307,7 +321,6 @@ export const Pagos: React.FC = () => {
   const mensualidadFamiliar = calcularMensualidadFamiliar();
   
   // Lógica de desglose para visualización
-  // Si saldoReal > 0, una parte es el mes actual, el resto es deuda vencida
   const deudaVencida = Math.max(0, saldoReal - mensualidadFamiliar);
   const deudaMesActual = saldoReal > 0 ? Math.min(saldoReal, mensualidadFamiliar) : 0;
 

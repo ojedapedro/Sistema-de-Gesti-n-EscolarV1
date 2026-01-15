@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { NivelEducativo, Representante, Alumno, NivelConfig, MetodoPago, RegistroPago, EstadoPago } from '../types';
 import { Plus, Save, User, DollarSign, CheckCircle, Loader2, CreditCard, Info } from 'lucide-react';
-import { MENSUALIDADES, REQUIERE_VERIFICACION, ANIO_ESCOLAR_ACTUAL } from '../constants';
+import { MENSUALIDADES, ANIO_ESCOLAR_ACTUAL } from '../constants';
 
 export const RegistroAlumno: React.FC = () => {
   // Datos Representante
@@ -116,7 +117,6 @@ export const RegistroAlumno: React.FC = () => {
       // 2. Guardar Pago Inicial (si aplica)
       if (incluirPago) {
         const montoNum = parseFloat(montoInicial);
-        const requiereVerificacion = REQUIERE_VERIFICACION.includes(metodoPago);
         
         // Determinar si es pago en Bs para guardar el histórico
         const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(metodoPago);
@@ -124,6 +124,10 @@ export const RegistroAlumno: React.FC = () => {
         
         // Si hay un solo alumno, asignamos su ID, si no "VARIOS"
         const studentIdRef = alumnosConId.length === 1 ? alumnosConId[0].id : 'VARIOS';
+
+        // LÓGICA DE VERIFICACIÓN (Igual que en Pagos.tsx)
+        const esOficinaVirtual = referenciaPago.trim().toUpperCase().startsWith('OV-');
+        const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
 
         const nuevoPago: RegistroPago = {
           id: crypto.randomUUID(),
@@ -146,15 +150,15 @@ export const RegistroAlumno: React.FC = () => {
           montoBolivares: montoBs,
           tasaCambioAplicada: esPagoBs ? tasaCambio : undefined,
           observaciones: `${observacionPago} - Inscripción`,
-          estado: requiereVerificacion ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO
+          estado: estadoInicial
         };
 
         await db.savePago(nuevoPago);
 
-        if (requiereVerificacion) {
-          mensajeExito += " El pago electrónico ha sido enviado a VERIFICACIÓN.";
+        if (esOficinaVirtual) {
+          mensajeExito += " El pago electrónico (OV) ha sido enviado a VERIFICACIÓN.";
         } else {
-          mensajeExito += " El pago ha sido registrado en el LIBRO CONTABLE.";
+          mensajeExito += " El pago ha sido registrado directamente en el LIBRO CONTABLE.";
         }
       }
 
@@ -287,8 +291,8 @@ export const RegistroAlumno: React.FC = () => {
                 <div className="flex items-start gap-2 mb-4 p-2 bg-white/50 rounded border border-green-200">
                     <Info size={16} className="text-green-600 mt-0.5" />
                     <p className="text-xs text-green-800">
-                      <strong>Nota:</strong> Los pagos en Efectivo se registran automáticamente en el <u>Libro Contable</u>. 
-                      Los pagos electrónicos (Móvil, Transferencia, Zelle) deben ser validados primero en la sección "Verificación Pagos".
+                      <strong>Nota:</strong> Solo las referencias que inicien con <b>'OV-'</b> (Oficina Virtual) requerirán verificación. 
+                      Los demás pagos se considerarán verificados por el operador.
                     </p>
                 </div>
 
