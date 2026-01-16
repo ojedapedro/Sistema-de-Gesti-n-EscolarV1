@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
-import { RegistroPago, EstadoPago } from '../types';
-import { Check, X, AlertTriangle, RefreshCw, Search, Monitor, Loader2 } from 'lucide-react';
+import { RegistroPago, EstadoPago, Representante } from '../types';
+import { Check, X, AlertTriangle, RefreshCw, Search, Monitor, Loader2, Printer } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 export const Verificacion: React.FC = () => {
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
@@ -45,6 +47,116 @@ export const Verificacion: React.FC = () => {
     cargarPagos();
   }, [activeTab, filtroRef]);
 
+  const generarReciboAprobacion = (pago: RegistroPago, rep: Representante, saldoRestante: number) => {
+    try {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+        
+        // --- CÁLCULOS VISUALES ---
+        // Como el pago YA se aprobó en BD, el saldoRestante es el saldo final.
+        // El saldo anterior era: Saldo Final + Monto Pagado.
+        const saldoAnterior = saldoRestante + pago.monto;
+
+        // --- HEADER ---
+        doc.setFillColor(63, 81, 181); // Indigo
+        doc.rect(0, 0, pageWidth, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        
+        const tituloRecibo = saldoRestante <= 0 ? "RECIBO DE PAGO (SOLVENTE)" : "COMPROBANTE DE ABONO";
+        doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
+        doc.setFontSize(12);
+        doc.text("AdminPro - Verificación de Pagos", pageWidth / 2, 30, { align: 'center' });
+
+        // --- INFO GENERAL ---
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
+        doc.text(`Fecha Pago: ${pago.fechaPago}`, 14, 56);
+        doc.text(`Recibo N°: ${pago.id.substring(0, 8).toUpperCase()}`, 14, 62);
+        
+        doc.setDrawColor(200, 200, 200);
+        doc.line(14, 68, pageWidth - 14, 68);
+        
+        // --- DATOS REPRESENTANTE ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DATOS DEL REPRESENTANTE", 14, 78);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`Nombre: ${rep.nombres} ${rep.apellidos}`, 14, 86);
+        doc.text(`Cédula: ${rep.cedula}`, 14, 92);
+        doc.text(`Matrícula Familiar: ${rep.matricula}`, 14, 98);
+
+        // --- DETALLES TRANSACCIÓN ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DETALLES DE LA TRANSACCIÓN (VERIFICADA)", 14, 113);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+
+        const startY = 123;
+        const col2 = pageWidth / 2;
+
+        doc.text(`Concepto: ${pago.mes} ${pago.anio}`, 14, startY);
+        doc.text(`Método: ${pago.metodoPago}`, col2, startY);
+        doc.text(`Ref: ${pago.referencia}`, col2, startY + 8);
+        
+        if(pago.montoBolivares) {
+            doc.text(`Monto Bs: ${pago.montoBolivares.toFixed(2)}`, col2, startY + 16);
+        }
+
+        // --- CAJA FINANCIERA (SALDOS) ---
+        const boxY = 155;
+        doc.setDrawColor(0, 0, 0);
+        doc.setFillColor(245, 247, 250);
+        doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
+
+        doc.setFont("helvetica", "bold");
+        doc.text("ESTADO DE CUENTA ACTUALIZADO", 20, boxY + 10);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        
+        // Saldo Anterior
+        const textoSaldoAnt = saldoAnterior > 0 ? "Saldo Anterior (Estimado):" : "Saldo Anterior (Crédito):";
+        doc.text(textoSaldoAnt, 20, boxY + 20);
+        doc.text(`$${Math.abs(saldoAnterior).toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
+
+        // Monto Pagado
+        doc.text("Monto Aprobado (-):", 20, boxY + 28);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 100, 0); // Verde oscuro
+        doc.text(`$${(pago.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
+        doc.setTextColor(0);
+
+        doc.setDrawColor(200);
+        doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
+
+        // Saldo Final
+        doc.setFont("helvetica", "bold");
+        let labelFinal = "SALDO RESTANTE (DEUDOR):";
+        if (saldoRestante <= 0) labelFinal = "ESTADO: SOLVENTE / A FAVOR:";
+        doc.text(labelFinal, 20, boxY + 45);
+        
+        if (saldoRestante > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
+        else doc.setTextColor(0, 150, 0); // Verde si está a favor
+        
+        doc.text(`$${Math.abs(saldoRestante).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
+
+        // --- PIE ---
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`ESTADO DEL PAGO: APROBADO`, 14, 230);
+        doc.text(`Verificado el: ${new Date().toLocaleString()}`, 14, 236);
+
+        doc.save(`Recibo_Verificado_${pago.cedulaRepresentante}_${pago.id.substring(0,4)}.pdf`);
+    } catch (e) {
+        console.error(e);
+        alert("Error generando el PDF del recibo.");
+    }
+  };
+
   const procesarPago = async (pago: RegistroPago, accion: 'APROBAR' | 'RECHAZAR' | 'RECUPERAR') => {
     let nuevoEstado: EstadoPago;
     let mensaje = "";
@@ -52,15 +164,15 @@ export const Verificacion: React.FC = () => {
     switch (accion) {
       case 'APROBAR':
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `¿Está seguro de APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\nEl pago será registrado en el Libro Contable.`;
+        mensaje = `¿Confirmar APROBACIÓN?\n\nRep: ${pago.nombreRepresentante}\nRef: ${pago.referencia}\nMonto: $${(pago.monto || 0).toFixed(2)}\n\n✅ Se generará el recibo automáticamente.`;
         break;
       case 'RECHAZAR':
         nuevoEstado = EstadoPago.RECHAZADO;
-        mensaje = `¿Está seguro de RECHAZAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n\nEl pago será movido al historial de Rechazados.`;
+        mensaje = `¿Confirmar RECHAZO?\n\nRep: ${pago.nombreRepresentante}\nRef: ${pago.referencia}`;
         break;
       case 'RECUPERAR': 
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `¿Está seguro de RECUPERAR y APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n🧾 Referencia: ${pago.referencia}\n\nEl pago será marcado como verificado.`;
+        mensaje = `¿RECUPERAR y APROBAR este pago?\n\nSe marcará como verificado y se generará recibo.`;
         break;
       default:
         return;
@@ -69,10 +181,26 @@ export const Verificacion: React.FC = () => {
     if (window.confirm(mensaje)) {
       setLoading(true);
       try {
+        // 1. Actualizar estado en BD
         await db.updateEstadoPago(pago.id, pago.referencia, pago.cedulaRepresentante, nuevoEstado);
+        
+        // 2. Si se aprueba, calcular saldo y generar recibo
+        if (accion === 'APROBAR' || accion === 'RECUPERAR') {
+             // Obtener datos frescos del representante
+             const rep = await db.getRepresentanteByCedula(pago.cedulaRepresentante);
+             
+             // Calcular saldo YA con el pago verificado (porque actualizamos en el paso 1)
+             const saldoActual = await db.calcularSaldoPendiente(pago.cedulaRepresentante);
+
+             if (rep) {
+                 generarReciboAprobacion(pago, rep, saldoActual);
+             }
+        }
+
         await cargarPagos();
       } catch (e) {
-        alert("Error actualizando estado.");
+        console.error(e);
+        alert("Error actualizando estado o generando recibo.");
         setLoading(false);
       }
     }
@@ -83,7 +211,9 @@ export const Verificacion: React.FC = () => {
       
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Verificación de Transacciones</h2>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Monitor className="text-indigo-600" /> Verificación de Transacciones
+          </h2>
           <p className="text-sm text-gray-500">Gestión de pagos electrónicos (Móvil, Transferencias, Zelle)</p>
         </div>
 
@@ -170,7 +300,7 @@ export const Verificacion: React.FC = () => {
                       <div className="flex justify-center gap-3">
                         {activeTab === 'PENDIENTE' && (
                           <>
-                            <button onClick={() => procesarPago(pago, 'APROBAR')} className="p-2 bg-green-50 rounded-full hover:bg-green-100 text-green-600" title="Aprobar Pago"><Check size={20} /></button>
+                            <button onClick={() => procesarPago(pago, 'APROBAR')} className="p-2 bg-green-50 rounded-full hover:bg-green-100 text-green-600" title="Aprobar Pago y Generar Recibo"><Check size={20} /></button>
                             <button onClick={() => procesarPago(pago, 'RECHAZAR')} className="p-2 bg-red-50 rounded-full hover:bg-red-100 text-red-600" title="Rechazar Pago"><X size={20} /></button>
                           </>
                         )}
