@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
@@ -148,44 +148,71 @@ export const Pagos: React.FC = () => {
 
     setLoading(true);
 
-    // LÓGICA DE VERIFICACIÓN:
-    // Si la referencia empieza con 'OV-' (Oficina Virtual), queda pendiente.
-    // Si no, se asume que el administrativo lo está cargando y ya está verificado.
-    const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
-    const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
-    
-    let nombreEstudiante = "VARIOS";
-    if (studentId && studentId !== "VARIOS") {
-        const est = representante.alumnos.find(a => a.id === studentId);
-        if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
-    }
-
-    // Calcular Nuevo Saldo
-    const nuevoSaldo = saldoReal - montoNum;
-    const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
-
-    const nuevoPago: RegistroPago = {
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-      fechaRegistro: new Date().toISOString().split('T')[0],
-      fechaPago: new Date().toISOString().split('T')[0],
-      cedulaRepresentante: representante.cedula,
-      nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
-      matricula: representante.matricula,
-      studentId: studentId,
-      mes: mesPago,
-      anio: anioPago,
-      formaPago: etiquetaFormaPago,
-      metodoPago: metodo,
-      referencia,
-      monto: montoNum,
-      montoBolivares: isMetodoBolivares(metodo) && montoBs ? parseFloat(montoBs) : undefined,
-      tasaCambioAplicada: isMetodoBolivares(metodo) ? tasaCambio : undefined,
-      observaciones: observaciones || (nombreEstudiante !== "VARIOS" ? `Pago de ${nombreEstudiante}` : ''),
-      estado: estadoInicial
-    };
-
     try {
+      // 1. VERIFICACIÓN DE DUPLICADOS
+      // Antes de guardar, consultamos si ya existe esta referencia para este representante y monto.
+      const historialPagos = await db.getPagos();
+      const posibleDuplicado = historialPagos.find(p => 
+          p.cedulaRepresentante === representante.cedula &&
+          p.referencia.trim().toUpperCase() === referencia.trim().toUpperCase() &&
+          Math.abs(p.monto - montoNum) < 0.01 // Comparación flexible de floats
+      );
+
+      if (posibleDuplicado) {
+          setLoading(false); // Detenemos el loader para preguntar
+          const confirmarDuplicado = window.confirm(
+              `⚠️ ALERTA DE DUPLICADO ⚠️\n\n` +
+              `Ya existe un pago registrado con los siguientes datos:\n` +
+              `• Referencia: ${referencia}\n` +
+              `• Monto: $${montoNum}\n` +
+              `• Fecha: ${posibleDuplicado.fechaRegistro}\n` +
+              `• Estado Actual: ${posibleDuplicado.estado}\n\n` +
+              `¿Está seguro que desea registrar este pago nuevamente?`
+          );
+          
+          if (!confirmarDuplicado) {
+              return; // Cancela la operación
+          }
+          setLoading(true); // Reinicia el loader si el usuario confirma
+      }
+
+      // 2. LÓGICA DE ESTADO (Oficina Virtual vs Admin)
+      // Si la referencia empieza con 'OV-' (Oficina Virtual), queda pendiente.
+      // Si no, se asume que el administrativo lo está cargando y ya está verificado.
+      const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
+      const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
+      
+      let nombreEstudiante = "VARIOS";
+      if (studentId && studentId !== "VARIOS") {
+          const est = representante.alumnos.find(a => a.id === studentId);
+          if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
+      }
+
+      // Calcular Nuevo Saldo
+      const nuevoSaldo = saldoReal - montoNum;
+      const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
+
+      const nuevoPago: RegistroPago = {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        fechaRegistro: new Date().toISOString().split('T')[0],
+        fechaPago: new Date().toISOString().split('T')[0],
+        cedulaRepresentante: representante.cedula,
+        nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
+        matricula: representante.matricula,
+        studentId: studentId,
+        mes: mesPago,
+        anio: anioPago,
+        formaPago: etiquetaFormaPago,
+        metodoPago: metodo,
+        referencia,
+        monto: montoNum,
+        montoBolivares: isMetodoBolivares(metodo) && montoBs ? parseFloat(montoBs) : undefined,
+        tasaCambioAplicada: isMetodoBolivares(metodo) ? tasaCambio : undefined,
+        observaciones: observaciones || (nombreEstudiante !== "VARIOS" ? `Pago de ${nombreEstudiante}` : ''),
+        estado: estadoInicial
+      };
+
       await db.savePago(nuevoPago);
       
       setSaldoAnteriorRecibo(saldoReal);
@@ -198,7 +225,8 @@ export const Pagos: React.FC = () => {
       setObservaciones('');
       
     } catch (e) {
-      alert("Error guardando el pago. Verifique conexión.");
+      console.error(e);
+      alert("Error procesando el pago. Verifique conexión.");
     } finally {
       setLoading(false);
     }
@@ -473,23 +501,35 @@ export const Pagos: React.FC = () => {
                </div>
                <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tipo Transacción</label>
-                <div className="flex gap-4 mt-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={formaPago === 'Abono'} onChange={() => setFormaPago('Abono')} />
-                    <span>Abono / Pago</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                        type="radio" 
-                        checked={formaPago === 'Total'} 
-                        onChange={() => {
-                            setFormaPago('Total');
-                            if(saldoReal > 0) handleMontoUsdChange(saldoReal.toString());
-                        }} 
-                        disabled={saldoReal <= 0}
-                    />
-                    <span className={saldoReal <= 0 ? 'text-gray-400' : ''}>Total Deuda</span>
-                  </label>
+                <div className="flex gap-2 mt-1">
+                  <button 
+                    onClick={() => {
+                        setFormaPago('Abono');
+                        setMonto('');
+                        setMontoBs('');
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                        formaPago === 'Abono' 
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-200' 
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <CreditCard size={16} /> Abono
+                  </button>
+                  <button 
+                    onClick={() => {
+                        setFormaPago('Total');
+                        if(saldoReal > 0) handleMontoUsdChange(saldoReal.toString());
+                    }}
+                    disabled={saldoReal <= 0}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
+                        formaPago === 'Total' 
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-200' 
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    } ${saldoReal <= 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <CheckCircle size={16} /> Total
+                  </button>
                 </div>
                </div>
             </div>
