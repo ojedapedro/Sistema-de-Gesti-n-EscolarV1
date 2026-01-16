@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
 export const Pagos: React.FC = () => {
@@ -22,6 +22,7 @@ export const Pagos: React.FC = () => {
   const [savingTasa, setSavingTasa] = useState(false);
 
   // Estado del Formulario
+  const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
   const [monto, setMonto] = useState('');
   const [montoBs, setMontoBs] = useState('');
   const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
@@ -31,6 +32,9 @@ export const Pagos: React.FC = () => {
   const [mesPago, setMesPago] = useState('Septiembre');
   const [anioPago, setAnioPago] = useState(ANIO_ESCOLAR_ACTUAL);
   const [studentId, setStudentId] = useState('');
+  
+  // Lógica Pronto Pago
+  const [aplicarProntoPago, setAplicarProntoPago] = useState(false);
 
   // Estado Post-Pago (Recibo)
   const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
@@ -48,6 +52,20 @@ export const Pagos: React.FC = () => {
     };
     init();
   }, []);
+
+  // Efecto para detectar fecha de pronto pago (día <= 25)
+  useEffect(() => {
+    if (fechaOperacion) {
+        const partes = fechaOperacion.split('-');
+        const dia = parseInt(partes[2]);
+        // Si es el día 25 o antes, sugerir pronto pago activado
+        if (dia <= 25) {
+            setAplicarProntoPago(true);
+        } else {
+            setAplicarProntoPago(false);
+        }
+    }
+  }, [fechaOperacion]);
 
   const buscarRepresentante = async () => {
     if (!busquedaCedula) return;
@@ -134,6 +152,12 @@ export const Pagos: React.FC = () => {
     }, 0);
   };
 
+  const calcularDescuentoProntoPago = () => {
+      if (!representante) return 0;
+      // $5 por cada alumno en la matrícula
+      return representante.alumnos.length * 5; 
+  };
+
   const procesarPago = async () => {
     if (!representante || !monto || !referencia) {
       setError('Complete todos los campos del pago');
@@ -150,35 +174,23 @@ export const Pagos: React.FC = () => {
 
     try {
       // 1. VERIFICACIÓN DE DUPLICADOS
-      // Antes de guardar, consultamos si ya existe esta referencia para este representante y monto.
       const historialPagos = await db.getPagos();
       const posibleDuplicado = historialPagos.find(p => 
           p.cedulaRepresentante === representante.cedula &&
           p.referencia.trim().toUpperCase() === referencia.trim().toUpperCase() &&
-          Math.abs(p.monto - montoNum) < 0.01 // Comparación flexible de floats
+          Math.abs(p.monto - montoNum) < 0.01 
       );
 
       if (posibleDuplicado) {
-          setLoading(false); // Detenemos el loader para preguntar
+          setLoading(false); 
           const confirmarDuplicado = window.confirm(
-              `⚠️ ALERTA DE DUPLICADO ⚠️\n\n` +
-              `Ya existe un pago registrado con los siguientes datos:\n` +
-              `• Referencia: ${referencia}\n` +
-              `• Monto: $${montoNum}\n` +
-              `• Fecha: ${posibleDuplicado.fechaRegistro}\n` +
-              `• Estado Actual: ${posibleDuplicado.estado}\n\n` +
-              `¿Está seguro que desea registrar este pago nuevamente?`
+              `⚠️ ALERTA DE DUPLICADO ⚠️\n\nReferencia: ${referencia}\nMonto: $${montoNum}\n\n¿Registrar nuevamente?`
           );
-          
-          if (!confirmarDuplicado) {
-              return; // Cancela la operación
-          }
-          setLoading(true); // Reinicia el loader si el usuario confirma
+          if (!confirmarDuplicado) return;
+          setLoading(true);
       }
 
-      // 2. LÓGICA DE ESTADO (Oficina Virtual vs Admin)
-      // Si la referencia empieza con 'OV-' (Oficina Virtual), queda pendiente.
-      // Si no, se asume que el administrativo lo está cargando y ya está verificado.
+      // 2. LÓGICA DE ESTADO
       const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
       const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
       
@@ -188,6 +200,16 @@ export const Pagos: React.FC = () => {
           if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
       }
 
+      // Construcción de Observaciones
+      let obsFinal = observaciones;
+      if (nombreEstudiante !== "VARIOS" && !obsFinal) {
+          obsFinal = `Pago de ${nombreEstudiante}`;
+      }
+      if (aplicarProntoPago) {
+          const descuento = calcularDescuentoProntoPago();
+          obsFinal += ` [PRONTO PAGO APLICADO: -$${descuento}]`;
+      }
+
       // Calcular Nuevo Saldo
       const nuevoSaldo = saldoReal - montoNum;
       const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
@@ -195,8 +217,8 @@ export const Pagos: React.FC = () => {
       const nuevoPago: RegistroPago = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
-        fechaRegistro: new Date().toISOString().split('T')[0],
-        fechaPago: new Date().toISOString().split('T')[0],
+        fechaRegistro: new Date().toISOString().split('T')[0], // Fecha Auditoría (Hoy)
+        fechaPago: fechaOperacion, // Fecha Seleccionada (Contable)
         cedulaRepresentante: representante.cedula,
         nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
         matricula: representante.matricula,
@@ -209,7 +231,7 @@ export const Pagos: React.FC = () => {
         monto: montoNum,
         montoBolivares: isMetodoBolivares(metodo) && montoBs ? parseFloat(montoBs) : undefined,
         tasaCambioAplicada: isMetodoBolivares(metodo) ? tasaCambio : undefined,
-        observaciones: observaciones || (nombreEstudiante !== "VARIOS" ? `Pago de ${nombreEstudiante}` : ''),
+        observaciones: obsFinal,
         estado: estadoInicial
       };
 
@@ -251,27 +273,28 @@ export const Pagos: React.FC = () => {
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(10);
         doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
-        doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 56);
+        doc.text(`Fecha Operación: ${pagoExitoso.fechaPago}`, 14, 56);
+        doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 62);
         
         doc.setDrawColor(200, 200, 200);
-        doc.line(14, 62, pageWidth - 14, 62);
+        doc.line(14, 68, pageWidth - 14, 68);
         
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
-        doc.text("DATOS DEL REPRESENTANTE", 14, 70);
+        doc.text("DATOS DEL REPRESENTANTE", 14, 78);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 78);
-        doc.text(`Cédula: ${representante.cedula}`, 14, 84);
-        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 90);
+        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 86);
+        doc.text(`Cédula: ${representante.cedula}`, 14, 92);
+        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 98);
 
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
-        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 105);
+        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 113);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
 
-        const startY = 115;
+        const startY = 123;
         const col2 = pageWidth / 2;
 
         doc.text(`Concepto: ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
@@ -288,7 +311,7 @@ export const Pagos: React.FC = () => {
             doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
         }
 
-        const boxY = 150;
+        const boxY = 155;
         doc.setDrawColor(0, 0, 0);
         doc.setFillColor(245, 247, 250);
         doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
@@ -332,13 +355,8 @@ export const Pagos: React.FC = () => {
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 225);
-        if (pagoExitoso.estado === EstadoPago.PENDIENTE_VERIFICACION) {
-            doc.setFontSize(8);
-            doc.setTextColor(150);
-            doc.text("* Pago sujeto a verificación bancaria. El saldo se actualizará tras validación.", 14, 230);
-        }
-
+        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 230);
+        
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
         alert("Error al generar el PDF.");
@@ -347,6 +365,7 @@ export const Pagos: React.FC = () => {
 
   // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
   const mensualidadFamiliar = calcularMensualidadFamiliar();
+  const descuentoProntoPago = calcularDescuentoProntoPago();
   
   // Lógica de desglose para visualización
   const deudaVencida = Math.max(0, saldoReal - mensualidadFamiliar);
@@ -479,9 +498,37 @@ export const Pagos: React.FC = () => {
                    </select>
                 </div>
                 <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Año Escolar</label>
-                   <input type="text" value={anioPago} onChange={(e) => setAnioPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5" />
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Fecha Operación</label>
+                   <input 
+                    type="date" 
+                    value={fechaOperacion} 
+                    onChange={(e) => setFechaOperacion(e.target.value)} 
+                    className="w-full text-sm border-gray-300 rounded p-1.5" 
+                   />
                 </div>
+            </div>
+
+            {/* SECCIÓN PRONTO PAGO */}
+            <div className="mb-4">
+               <div className="flex items-center gap-2 mb-2">
+                   <input 
+                    type="checkbox" 
+                    id="chkProntoPago"
+                    checked={aplicarProntoPago}
+                    onChange={(e) => setAplicarProntoPago(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                   />
+                   <label htmlFor="chkProntoPago" className="text-sm font-bold text-gray-700 flex items-center gap-2 select-none cursor-pointer">
+                      <Tag size={16} className="text-green-600" /> 
+                      Aplicar Descuento Pronto Pago (-$5/alumno)
+                   </label>
+               </div>
+               {aplicarProntoPago && (
+                   <p className="text-xs text-green-600 pl-6">
+                       Se descontarán <b>${descuentoProntoPago}</b> del total al usar el botón "Total". 
+                       <br/>(Aplica si paga antes del 25).
+                   </p>
+               )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -519,7 +566,13 @@ export const Pagos: React.FC = () => {
                   <button 
                     onClick={() => {
                         setFormaPago('Total');
-                        if(saldoReal > 0) handleMontoUsdChange(saldoReal.toString());
+                        if(saldoReal > 0) {
+                            // Si aplica pronto pago, restamos el descuento al saldo real para sugerir el monto
+                            const montoFinal = aplicarProntoPago 
+                                ? Math.max(0, saldoReal - descuentoProntoPago) 
+                                : saldoReal;
+                            handleMontoUsdChange(montoFinal.toString());
+                        }
                     }}
                     disabled={saldoReal <= 0}
                     className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
