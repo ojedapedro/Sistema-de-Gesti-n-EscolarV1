@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { RegistroPago, Representante, EstadoPago, NivelConfig } from '../types';
+import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo } from '../types';
 import { MENSUALIDADES } from '../constants';
 
 type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA';
@@ -421,7 +421,7 @@ export const Reportes: React.FC = () => {
                   <label className="block text-xs font-bold text-gray-500 mb-1">Grado</label>
                   <select value={filtroNivel} onChange={(e) => setFiltroNivel(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
                     <option value="TODOS">Todos los Grados</option>
-                    {nivelesConfig.map(n => <option key={n.nivel} value={n.nivel}>{n.nivel}</option>)}
+                    {Object.values(NivelEducativo).map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </div>
                 <div>
