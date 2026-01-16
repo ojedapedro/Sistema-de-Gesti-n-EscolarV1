@@ -59,8 +59,10 @@ export const Pagos: React.FC = () => {
   useEffect(() => {
     if (fechaOperacion) {
         const partes = fechaOperacion.split('-');
+        // partes[0] = año, partes[1] = mes, partes[2] = dia
         const dia = parseInt(partes[2]);
-        // Si es el día 25 o antes, sugerir pronto pago activado
+        
+        // Regla: Si el pago se realiza los 25 de cada mes o antes -> Aplica Pronto Pago
         if (dia <= 25) {
             setAplicarProntoPago(true);
         } else {
@@ -156,7 +158,7 @@ export const Pagos: React.FC = () => {
 
   const calcularDescuentoProntoPago = () => {
       if (!representante) return 0;
-      // $5 por cada alumno en la matrícula
+      // Regla: Descuento de 5$ por cada alumno en la matrícula
       return representante.alumnos.length * 5; 
   };
 
@@ -164,14 +166,10 @@ export const Pagos: React.FC = () => {
   const generarCierreDiario = async () => {
     setLoadingReporte(true);
     try {
-        // 1. Obtener todos los pagos
         const allPagos = await db.getPagos();
-
-        // 2. Filtrar por la fecha seleccionada en el formulario (fechaOperacion)
-        // Se considera la 'fechaPago' (contable) para el cierre
         const pagosDelDia = allPagos.filter(p => 
             p.fechaPago === fechaOperacion && 
-            p.estado === EstadoPago.VERIFICADO // Solo pagos efectivos/verificados
+            p.estado === EstadoPago.VERIFICADO 
         );
 
         if (pagosDelDia.length === 0) {
@@ -180,7 +178,6 @@ export const Pagos: React.FC = () => {
             return;
         }
 
-        // 3. Calcular Totales por Método
         const resumenMetodos: Record<string, { count: number, totalUSD: number, totalBs: number }> = {};
         
         pagosDelDia.forEach(p => {
@@ -192,23 +189,17 @@ export const Pagos: React.FC = () => {
             resumenMetodos[p.metodoPago].totalBs += (p.montoBolivares || 0);
         });
 
-        // Totales Generales
         const totalGeneralUSD = pagosDelDia.reduce((sum, p) => sum + (p.monto || 0), 0);
         const totalGeneralBs = pagosDelDia.reduce((sum, p) => sum + (p.montoBolivares || 0), 0);
 
-        // 4. Generar PDF
         const doc = new jsPDF();
-        
-        // Encabezado
         doc.setFontSize(18);
         doc.text("Reporte de Cierre de Caja Diario", 14, 20);
-        
         doc.setFontSize(11);
         doc.text(`Fecha de Cierre: ${fechaOperacion}`, 14, 28);
         doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 34);
         doc.text(`Total Transacciones: ${pagosDelDia.length}`, 14, 40);
 
-        // --- TABLA RESUMEN ---
         doc.setFontSize(14);
         doc.text("Resumen General por Método", 14, 55);
 
@@ -229,15 +220,14 @@ export const Pagos: React.FC = () => {
             footStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' }
         });
 
-        // --- TABLA DETALLADA ---
         let finalY = (doc as any).lastAutoTable.finalY + 15;
         doc.text("Detalle de Movimientos", 14, finalY);
 
         const bodyDetalle = pagosDelDia.map(p => [
-            p.nombreRepresentante.substring(0, 20), // Truncar nombre largo
+            p.nombreRepresentante.substring(0, 20),
             p.metodoPago,
             p.referencia,
-            `${p.mes || '-'} / ${p.formaPago || '-'}`, // Concepto breve
+            `${p.mes || '-'} / ${p.formaPago || '-'}`,
             `$${(p.monto || 0).toFixed(2)}`,
             p.montoBolivares ? `Bs. ${p.montoBolivares.toFixed(2)}` : '-'
         ]);
@@ -250,11 +240,9 @@ export const Pagos: React.FC = () => {
             headStyles: { fillColor: [100, 100, 100] },
         });
 
-        // Espacio para firmas
         const pageHeight = doc.internal.pageSize.height;
         doc.line(40, pageHeight - 30, 90, pageHeight - 30);
         doc.text("Cajero / Responsable", 45, pageHeight - 25);
-
         doc.line(120, pageHeight - 30, 170, pageHeight - 30);
         doc.text("Administración", 130, pageHeight - 25);
 
@@ -312,23 +300,38 @@ export const Pagos: React.FC = () => {
 
       // Construcción de Observaciones
       let obsFinal = observaciones;
-      if (nombreEstudiante !== "VARIOS" && !obsFinal) {
-          obsFinal = `Pago de ${nombreEstudiante}`;
-      }
-      if (aplicarProntoPago) {
+      let montoNeto = montoNum;
+      
+      // Si se usó Pronto Pago con botón Total, indicarlo en observaciones
+      // Nota: El monto registrado es el neto pagado. El descuento es informativo.
+      if (formaPago === 'Total' && aplicarProntoPago) {
           const descuento = calcularDescuentoProntoPago();
-          obsFinal += ` [PRONTO PAGO APLICADO: -$${descuento}]`;
+          const montoSinDescuento = montoNeto + descuento;
+          // Validamos si el monto registrado coincide aproximadamente con el saldo menos descuento
+          const saldoEsperadoConDescuento = Math.max(0, saldoReal - descuento);
+          
+          // Si el usuario está pagando "Total" con descuento, agregamos la nota
+          if (Math.abs(montoNeto - saldoEsperadoConDescuento) < 1) {
+             obsFinal = obsFinal ? `${obsFinal} - ` : '';
+             obsFinal += `PRONTO PAGO APLICADO (Ahorro: $${descuento})`;
+          }
       }
 
-      // Calcular Nuevo Saldo
-      const nuevoSaldo = saldoReal - montoNum;
-      const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
+      if (nombreEstudiante !== "VARIOS" && !obsFinal.includes(nombreEstudiante)) {
+          obsFinal = `${obsFinal ? obsFinal + ' - ' : ''}Pago de ${nombreEstudiante}`;
+      }
+
+      const nuevoSaldo = saldoReal - montoNeto; // Saldo contable puro
+      
+      // Si el pago es total con pronto pago, el saldo visual debería considerarse 0 aunque matemáticamente quede un remanente en la BD de precios fijos.
+      // Aquí solo calculamos la etiqueta.
+      const etiquetaFormaPago = (nuevoSaldo <= 0 || (formaPago === 'Total' && aplicarProntoPago)) ? 'Cancelación / Adelanto' : 'Abono';
 
       const nuevoPago: RegistroPago = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
-        fechaRegistro: new Date().toISOString().split('T')[0], // Fecha Auditoría (Hoy)
-        fechaPago: fechaOperacion, // Fecha Seleccionada (Contable)
+        fechaRegistro: new Date().toISOString().split('T')[0],
+        fechaPago: fechaOperacion,
         cedulaRepresentante: representante.cedula,
         nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
         matricula: representante.matricula,
@@ -375,7 +378,11 @@ export const Pagos: React.FC = () => {
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
-        const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "RECIBO DE ABONO";
+        // Título inteligente
+        const tituloRecibo = (pagoExitoso.observaciones && pagoExitoso.observaciones.includes('PRONTO PAGO')) 
+            ? "RECIBO - PRONTO PAGO" 
+            : (saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "RECIBO DE ABONO");
+
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
         doc.setFontSize(12);
         doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
@@ -442,11 +449,20 @@ export const Pagos: React.FC = () => {
         doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
         doc.setTextColor(0);
         
+        // Mostrar descuento si existe en observaciones
+        if (pagoExitoso.observaciones && pagoExitoso.observaciones.includes('PRONTO PAGO')) {
+            doc.setFontSize(9);
+            doc.setTextColor(0, 128, 0); // Green
+            doc.text("** Incluye Descuento Pronto Pago", 20, boxY + 34);
+            doc.setFontSize(11);
+            doc.setTextColor(0);
+        }
+        
         if (pagoExitoso.montoBolivares) {
             doc.setFont("helvetica", "normal");
             doc.setFontSize(9);
             doc.setTextColor(100);
-            doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
+            doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 34, { align: 'right' });
             doc.setTextColor(0);
             doc.setFontSize(11);
         }
@@ -455,12 +471,21 @@ export const Pagos: React.FC = () => {
         doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
 
         doc.setFont("helvetica", "bold");
-        let labelFinal = "SALDO ACTUAL:";
-        if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
+        
+        // Lógica visual del saldo final en el recibo
+        // Si se aplicó pronto pago con botón total, mostramos 0 visualmente aunque matemáticamente exista remanente
+        let saldoFinalMostrar = saldoFinalRecibo;
+        if (pagoExitoso.observaciones.includes('PRONTO PAGO') && saldoFinalMostrar > 0 && saldoFinalMostrar < 25) {
+             // Asumimos que el remanente es el descuento y mostramos 0 para claridad del cliente
+             saldoFinalMostrar = 0; 
+        }
+
+        let labelFinal = "SALDO RESTANTE:";
+        if (saldoFinalMostrar <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
         doc.text(labelFinal, 20, boxY + 45);
-        if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); 
+        if (saldoFinalMostrar > 0) doc.setTextColor(200, 0, 0); 
         else doc.setTextColor(0, 150, 0);
-        doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
+        doc.text(`$${Math.abs(saldoFinalMostrar).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
@@ -642,14 +667,18 @@ export const Pagos: React.FC = () => {
                     className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
                    />
                    <label htmlFor="chkProntoPago" className="text-sm font-bold text-gray-700 flex items-center gap-2 select-none cursor-pointer">
-                      <Tag size={16} className="text-green-600" /> 
+                      <Tag size={16} className={`text-${aplicarProntoPago ? 'green' : 'gray'}-600`} /> 
                       Aplicar Descuento Pronto Pago (-$5/alumno)
                    </label>
                </div>
-               {aplicarProntoPago && (
+               {aplicarProntoPago ? (
                    <p className="text-xs text-green-600 pl-6">
-                       Se descontarán <b>${descuentoProntoPago}</b> del total al usar el botón "Total". 
-                       <br/>(Aplica si paga antes del 25).
+                       <span className="font-bold">¡ACTIVO!</span> Se descontarán <b>${descuentoProntoPago}</b> del saldo si elige pagar el "Total". 
+                       (Fecha válida: Día &le; 25).
+                   </p>
+               ) : (
+                   <p className="text-xs text-gray-400 pl-6">
+                       Descuento no disponible para la fecha seleccionada (Día {parseInt(fechaOperacion.split('-')[2])}).
                    </p>
                )}
             </div>
@@ -690,7 +719,8 @@ export const Pagos: React.FC = () => {
                     onClick={() => {
                         setFormaPago('Total');
                         if(saldoReal > 0) {
-                            // Si aplica pronto pago, restamos el descuento al saldo real para sugerir el monto
+                            // Si aplica pronto pago, el monto a pagar es Saldo - Descuento
+                            // El sistema registrará este monto neto.
                             const montoFinal = aplicarProntoPago 
                                 ? Math.max(0, saldoReal - descuentoProntoPago) 
                                 : saldoReal;
