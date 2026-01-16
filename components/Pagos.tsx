@@ -320,8 +320,13 @@ export const Pagos: React.FC = () => {
           obsFinal += ` [PRONTO PAGO APLICADO: -$${descuento}]`;
       }
 
-      // Calcular Nuevo Saldo
+      // Calcular Nuevo Saldo para el Recibo
       const nuevoSaldo = saldoReal - montoNum;
+      
+      // Guardamos estado para el recibo antes de limpiar el formulario
+      setSaldoAnteriorRecibo(saldoReal);
+      setSaldoFinalRecibo(nuevoSaldo);
+
       const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
 
       const nuevoPago: RegistroPago = {
@@ -347,14 +352,16 @@ export const Pagos: React.FC = () => {
 
       await db.savePago(nuevoPago);
       
-      setSaldoAnteriorRecibo(saldoReal);
-      setSaldoFinalRecibo(nuevoSaldo);
+      // Actualizamos estado de éxito para mostrar el botón de descarga
       setPagoExitoso(nuevoPago);
 
       setMonto('');
       setMontoBs('');
       setReferencia('');
       setObservaciones('');
+      
+      // Actualizar saldo visual en pantalla (sin recargar todo el representante necesariamente)
+      setSaldoReal(nuevoSaldo);
       
     } catch (e) {
       console.error(e);
@@ -370,16 +377,18 @@ export const Pagos: React.FC = () => {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.width;
         
-        doc.setFillColor(63, 81, 181);
+        // --- HEADER ---
+        doc.setFillColor(63, 81, 181); // Indigo
         doc.rect(0, 0, pageWidth, 40, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
-        const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "RECIBO DE ABONO";
+        const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "COMPROBANTE DE ABONO";
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
         doc.setFontSize(12);
         doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
 
+        // --- INFO GENERAL ---
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(10);
         doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
@@ -389,6 +398,7 @@ export const Pagos: React.FC = () => {
         doc.setDrawColor(200, 200, 200);
         doc.line(14, 68, pageWidth - 14, 68);
         
+        // --- DATOS REPRESENTANTE ---
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
         doc.text("DATOS DEL REPRESENTANTE", 14, 78);
@@ -398,6 +408,7 @@ export const Pagos: React.FC = () => {
         doc.text(`Cédula: ${representante.cedula}`, 14, 92);
         doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 98);
 
+        // --- DETALLES TRANSACCIÓN ---
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
         doc.text("DETALLES DE LA TRANSACCIÓN", 14, 113);
@@ -421,6 +432,7 @@ export const Pagos: React.FC = () => {
             doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
         }
 
+        // --- CAJA FINANCIERA (SALDOS) ---
         const boxY = 155;
         doc.setDrawColor(0, 0, 0);
         doc.setFillColor(245, 247, 250);
@@ -431,14 +443,16 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(11);
         doc.setFont("helvetica", "normal");
         
+        // Saldo Anterior
         const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
         doc.text(textoSaldoAnt, 20, boxY + 20);
         const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
         doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
 
+        // Monto Pagado
         doc.text("Monto Cancelado (-):", 20, boxY + 28);
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 100, 0);
+        doc.setTextColor(0, 100, 0); // Verde oscuro
         doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
         doc.setTextColor(0);
         
@@ -454,19 +468,28 @@ export const Pagos: React.FC = () => {
         doc.setDrawColor(200);
         doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
 
+        // Saldo Final
         doc.setFont("helvetica", "bold");
         let labelFinal = "SALDO RESTANTE (DEUDOR):";
         if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
         doc.text(labelFinal, 20, boxY + 45);
-        if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); 
-        else doc.setTextColor(0, 150, 0);
+        
+        if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
+        else doc.setTextColor(0, 150, 0); // Verde si está a favor
+        
         doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
+        // --- PIE ---
         doc.setTextColor(0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
         doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 230);
         
+        if (pagoExitoso.observaciones) {
+            doc.setFontSize(9);
+            doc.text(`Obs: ${pagoExitoso.observaciones}`, 14, 236);
+        }
+
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
         alert("Error al generar el PDF.");
@@ -602,7 +625,19 @@ export const Pagos: React.FC = () => {
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
-            <h3 className="font-bold text-lg mb-4 text-slate-700">Registrar Nueva Transacción</h3>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-700">Registrar Nueva Transacción</h3>
+                
+                {/* BOTÓN DESCARGA ÚLTIMO PAGO */}
+                {pagoExitoso && (
+                    <button 
+                        onClick={generarReciboPDF}
+                        className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold border border-indigo-200 hover:bg-indigo-200 transition-colors animate-in fade-in slide-in-from-right-5"
+                    >
+                        <Printer size={16} /> Descargar Recibo (Último Pago)
+                    </button>
+                )}
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
                 <div>
