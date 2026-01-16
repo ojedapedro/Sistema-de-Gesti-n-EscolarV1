@@ -41,10 +41,16 @@ export const Reportes: React.FC = () => {
   // Filtros
   const [tipoReporte, setTipoReporte] = useState<TipoReporte>('TRANSACCIONES');
   const [filtroCedula, setFiltroCedula] = useState('');
+  
+  // Filtros Transacciones
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [filtroVerificacion, setFiltroVerificacion] = useState('TODOS'); // TODOS, VERIFICADO, PENDIENTE
+  
+  // Filtros Solvencia
   const [filtroEstadoSolvencia, setFiltroEstadoSolvencia] = useState('TODOS'); // TODOS, MOROSO, SOLVENTE
+  const [filtroNivel, setFiltroNivel] = useState('TODOS');
+  const [filtroSeccion, setFiltroSeccion] = useState('');
 
   // UI
   const [loading, setLoading] = useState(false);
@@ -183,7 +189,18 @@ export const Reportes: React.FC = () => {
         const cumpleEstado = filtroEstadoSolvencia === 'TODOS'
           ? true
           : (filtroEstadoSolvencia === 'MOROSO' ? s.esMoroso : !s.esMoroso);
-        return cumpleCedula && cumpleEstado;
+          
+        let cumpleNivel = true;
+        if (filtroNivel !== 'TODOS') {
+            cumpleNivel = s.detallesAlumnos.some(alu => alu.nivel === filtroNivel);
+        }
+
+        let cumpleSeccion = true;
+        if (filtroSeccion) {
+            cumpleSeccion = s.detallesAlumnos.some(alu => alu.seccion.trim().toUpperCase() === filtroSeccion.trim().toUpperCase());
+        }
+
+        return cumpleCedula && cumpleEstado && cumpleNivel && cumpleSeccion;
       });
     }
   };
@@ -199,16 +216,18 @@ export const Reportes: React.FC = () => {
       doc.text('Sistema de Gestión Administrativa', 14, 20);
       doc.setFontSize(12);
       doc.setTextColor(100);
-      doc.text(tipoReporte === 'TRANSACCIONES' ? 'Reporte de Pagos y Transacciones' : 'Reporte de Solvencia (Representantes)', 14, 28);
+      doc.text(tipoReporte === 'TRANSACCIONES' ? 'Reporte de Pagos y Transacciones' : 'Reporte de Solvencia Escolar', 14, 28);
       
       doc.setFontSize(10);
       doc.text(`Generado: ${new Date().toLocaleString()}`, 14, 35);
       
-      let filtrosTexto = `Filtros: Cédula: ${filtroCedula || 'Todas'}`;
+      let filtrosTexto = `Cédula: ${filtroCedula || 'Todas'}`;
       if (tipoReporte === 'TRANSACCIONES') {
         filtrosTexto += ` | Estado: ${filtroVerificacion} | Desde: ${fechaInicio || '-'} Hasta: ${fechaFin || '-'}`;
       } else {
         filtrosTexto += ` | Condición: ${filtroEstadoSolvencia}`;
+        if (filtroNivel !== 'TODOS') filtrosTexto += ` | Nivel: ${filtroNivel}`;
+        if (filtroSeccion) filtrosTexto += ` | Sección: ${filtroSeccion.toUpperCase()}`;
       }
       doc.text(filtrosTexto, 14, 42);
 
@@ -372,14 +391,33 @@ export const Reportes: React.FC = () => {
           )}
 
           {tipoReporte === 'SOLVENCIA' && (
-             <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Estado Financiero</label>
-                <select value={filtroEstadoSolvencia} onChange={(e) => setFiltroEstadoSolvencia(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
-                  <option value="TODOS">Todos</option>
-                  <option value="MOROSO">Morosos (Con Deuda)</option>
-                  <option value="SOLVENTE">Solventes (Al día)</option>
-                </select>
-              </div>
+             <>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Estado Financiero</label>
+                  <select value={filtroEstadoSolvencia} onChange={(e) => setFiltroEstadoSolvencia(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
+                    <option value="TODOS">Todos</option>
+                    <option value="MOROSO">Morosos (Con Deuda)</option>
+                    <option value="SOLVENTE">Solventes (Al día)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Filtrar por Nivel</label>
+                  <select value={filtroNivel} onChange={(e) => setFiltroNivel(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
+                    <option value="TODOS">Todos los Niveles</option>
+                    {nivelesConfig.map(n => <option key={n.nivel} value={n.nivel}>{n.nivel}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Sección</label>
+                  <input 
+                    type="text" 
+                    value={filtroSeccion} 
+                    onChange={(e) => setFiltroSeccion(e.target.value)} 
+                    className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                    placeholder="Ej: A"
+                  />
+                </div>
+             </>
           )}
         </div>
 
