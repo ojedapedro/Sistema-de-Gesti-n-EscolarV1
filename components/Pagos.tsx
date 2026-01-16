@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag, FileBarChart } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export const Pagos: React.FC = () => {
   // Estado Principal
@@ -19,6 +20,7 @@ export const Pagos: React.FC = () => {
   const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingRep, setLoadingRep] = useState(false);
+  const [loadingReporte, setLoadingReporte] = useState(false);
   const [savingTasa, setSavingTasa] = useState(false);
 
   // Estado del Formulario
@@ -156,6 +158,114 @@ export const Pagos: React.FC = () => {
       if (!representante) return 0;
       // $5 por cada alumno en la matrícula
       return representante.alumnos.length * 5; 
+  };
+
+  // --- REPORTE DE CIERRE DIARIO ---
+  const generarCierreDiario = async () => {
+    setLoadingReporte(true);
+    try {
+        // 1. Obtener todos los pagos
+        const allPagos = await db.getPagos();
+
+        // 2. Filtrar por la fecha seleccionada en el formulario (fechaOperacion)
+        // Se considera la 'fechaPago' (contable) para el cierre
+        const pagosDelDia = allPagos.filter(p => 
+            p.fechaPago === fechaOperacion && 
+            p.estado === EstadoPago.VERIFICADO // Solo pagos efectivos/verificados
+        );
+
+        if (pagosDelDia.length === 0) {
+            alert("No hay pagos verificados registrados para la fecha seleccionada.");
+            setLoadingReporte(false);
+            return;
+        }
+
+        // 3. Calcular Totales por Método
+        const resumenMetodos: Record<string, { count: number, totalUSD: number, totalBs: number }> = {};
+        
+        pagosDelDia.forEach(p => {
+            if (!resumenMetodos[p.metodoPago]) {
+                resumenMetodos[p.metodoPago] = { count: 0, totalUSD: 0, totalBs: 0 };
+            }
+            resumenMetodos[p.metodoPago].count += 1;
+            resumenMetodos[p.metodoPago].totalUSD += (p.monto || 0);
+            resumenMetodos[p.metodoPago].totalBs += (p.montoBolivares || 0);
+        });
+
+        // Totales Generales
+        const totalGeneralUSD = pagosDelDia.reduce((sum, p) => sum + (p.monto || 0), 0);
+        const totalGeneralBs = pagosDelDia.reduce((sum, p) => sum + (p.montoBolivares || 0), 0);
+
+        // 4. Generar PDF
+        const doc = new jsPDF();
+        
+        // Encabezado
+        doc.setFontSize(18);
+        doc.text("Reporte de Cierre de Caja Diario", 14, 20);
+        
+        doc.setFontSize(11);
+        doc.text(`Fecha de Cierre: ${fechaOperacion}`, 14, 28);
+        doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 34);
+        doc.text(`Total Transacciones: ${pagosDelDia.length}`, 14, 40);
+
+        // --- TABLA RESUMEN ---
+        doc.setFontSize(14);
+        doc.text("Resumen General por Método", 14, 55);
+
+        const bodyResumen = Object.entries(resumenMetodos).map(([metodo, data]) => [
+            metodo,
+            data.count,
+            `$${data.totalUSD.toFixed(2)}`,
+            data.totalBs > 0 ? `Bs. ${data.totalBs.toFixed(2)}` : '-'
+        ]);
+
+        autoTable(doc, {
+            startY: 60,
+            head: [['Método de Pago', 'Cant.', 'Total USD', 'Total Bs']],
+            body: bodyResumen,
+            foot: [['TOTAL GENERAL', pagosDelDia.length, `$${totalGeneralUSD.toFixed(2)}`, `Bs. ${totalGeneralBs.toFixed(2)}`]],
+            theme: 'striped',
+            headStyles: { fillColor: [44, 62, 80] },
+            footStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' }
+        });
+
+        // --- TABLA DETALLADA ---
+        let finalY = (doc as any).lastAutoTable.finalY + 15;
+        doc.text("Detalle de Movimientos", 14, finalY);
+
+        const bodyDetalle = pagosDelDia.map(p => [
+            p.nombreRepresentante.substring(0, 20), // Truncar nombre largo
+            p.metodoPago,
+            p.referencia,
+            `${p.mes || '-'} / ${p.formaPago || '-'}`, // Concepto breve
+            `$${(p.monto || 0).toFixed(2)}`,
+            p.montoBolivares ? `Bs. ${p.montoBolivares.toFixed(2)}` : '-'
+        ]);
+
+        autoTable(doc, {
+            startY: finalY + 5,
+            head: [['Representante', 'Método', 'Ref', 'Concepto', 'Monto $', 'Monto Bs']],
+            body: bodyDetalle,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [100, 100, 100] },
+        });
+
+        // Espacio para firmas
+        const pageHeight = doc.internal.pageSize.height;
+        doc.line(40, pageHeight - 30, 90, pageHeight - 30);
+        doc.text("Cajero / Responsable", 45, pageHeight - 25);
+
+        doc.line(120, pageHeight - 30, 170, pageHeight - 30);
+        doc.text("Administración", 130, pageHeight - 25);
+
+        doc.save(`Cierre_Caja_${fechaOperacion}.pdf`);
+
+    } catch (e) {
+        console.error(e);
+        alert("Error generando el cierre de caja.");
+    } finally {
+        setLoadingReporte(false);
+    }
   };
 
   const procesarPago = async () => {
@@ -379,25 +489,38 @@ export const Pagos: React.FC = () => {
             <DollarSign className="text-green-600" /> Caja / Registrar Pago
           </h2>
           
-          <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-lg shadow-sm">
-            <span className="text-xs font-bold text-gray-500 pl-2">Tasa BCV:</span>
-            <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">Bs.</span>
-                <input
-                    type="number"
-                    value={tasaCambio}
-                    onChange={(e) => handleTasaChange(e.target.value)}
-                    className="w-24 pl-8 pr-2 py-1 border border-indigo-100 rounded bg-indigo-50 text-indigo-700 font-bold text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                    placeholder="0.00"
-                />
-            </div>
+          <div className="flex gap-2">
+            {/* BOTÓN CIERRE DE CAJA */}
             <button 
-                onClick={guardarTasaManual} 
-                disabled={savingTasa}
-                className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                onClick={generarCierreDiario}
+                disabled={loadingReporte}
+                className="flex items-center gap-2 bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-800 transition-colors shadow-sm"
+                title="Generar PDF con cierre del día seleccionado"
             >
-                {savingTasa ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {loadingReporte ? <Loader2 size={16} className="animate-spin" /> : <FileBarChart size={16} />}
+                Cierre Caja
             </button>
+
+            <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-lg shadow-sm">
+                <span className="text-xs font-bold text-gray-500 pl-2">Tasa BCV:</span>
+                <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">Bs.</span>
+                    <input
+                        type="number"
+                        value={tasaCambio}
+                        onChange={(e) => handleTasaChange(e.target.value)}
+                        className="w-24 pl-8 pr-2 py-1 border border-indigo-100 rounded bg-indigo-50 text-indigo-700 font-bold text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="0.00"
+                    />
+                </div>
+                <button 
+                    onClick={guardarTasaManual} 
+                    disabled={savingTasa}
+                    className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                >
+                    {savingTasa ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                </button>
+            </div>
           </div>
         </div>
         
