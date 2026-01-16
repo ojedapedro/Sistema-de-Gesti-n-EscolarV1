@@ -255,22 +255,39 @@ export const Reportes: React.FC = () => {
         doc.text(`Total en este reporte: $${total.toFixed(2)}`, 14, finalY + 10);
 
       } else {
-        const data = (datos as DeudaCalculada[]).map(s => [
-          s.cedula,
-          s.nombre,
-          s.matricula,
-          s.totalAlumnos,
-          `$${s.deudaEsperada.toFixed(2)}`,
-          `$${s.totalPagado.toFixed(2)}`,
-          `$${s.saldoPendiente.toFixed(2)}`,
-          s.esMoroso ? 'MOROSO' : 'SOLVENTE'
-        ]);
+        // SOLVENCIA
+        const data = (datos as DeudaCalculada[]).map(s => {
+          // Filtrar qué alumnos mostrar en el reporte basado en los filtros de UI
+          const alumnosParaReporte = s.detallesAlumnos.filter(alu => {
+              let match = true;
+              if (filtroNivel !== 'TODOS') match = match && alu.nivel === filtroNivel;
+              if (filtroSeccion) match = match && alu.seccion.trim().toUpperCase() === filtroSeccion.trim().toUpperCase();
+              return match;
+          });
+          
+          // Si no hay filtro, mostrar todos, si hay filtro y no coincide, no se muestra nada (o se muestra el filtrado)
+          // La lógica de obtenerDatosFiltrados ya asegura que el Representante tenga al menos uno.
+          const alumnosMostrar = alumnosParaReporte.length > 0 ? alumnosParaReporte : s.detallesAlumnos;
+
+          const textoAlumnos = alumnosMostrar.map(a => `${a.nombre} (Sec: ${a.seccion})`).join('\n');
+
+          return [
+            s.cedula,
+            s.nombre,
+            s.matricula,
+            textoAlumnos, // Reemplazado: Total Numérico -> Texto Detallado
+            `$${s.deudaEsperada.toFixed(2)}`,
+            `$${s.totalPagado.toFixed(2)}`,
+            `$${s.saldoPendiente.toFixed(2)}`,
+            s.esMoroso ? 'MOROSO' : 'SOLVENTE'
+          ];
+        });
 
         autoTable(doc, {
           startY: 50,
-          head: [['Cédula', 'Representante', 'Matrícula', 'Alumnos', 'Deuda Total', 'Pagado', 'Pendiente', 'Estado']],
+          head: [['Cédula', 'Representante', 'Matrícula', 'Alumnos (Sección)', 'Deuda Total', 'Pagado', 'Pendiente', 'Estado']],
           body: data,
-          styles: { fontSize: 8 },
+          styles: { fontSize: 8, valign: 'middle' },
           didParseCell: (data) => {
             if (data.section === 'body' && data.column.index === 7) {
               const texto = data.cell.raw as string;
