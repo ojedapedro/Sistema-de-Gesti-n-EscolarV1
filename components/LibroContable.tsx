@@ -1,9 +1,33 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { RegistroPago, EstadoPago } from '../types';
 import { BookOpen, Download, TrendingUp, Calendar, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { LOGO_URL } from '../constants';
+
+// Helper
+const loadImage = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+  });
+};
 
 export const LibroContable: React.FC = () => {
   const [pagosVerificados, setPagosVerificados] = useState<RegistroPago[]>([]);
@@ -37,9 +61,15 @@ export const LibroContable: React.FC = () => {
   const totalUSD = pagosVerificados.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
   const totalBs = pagosVerificados.reduce((acc, p) => acc + (Number(p.montoBolivares) || 0), 0);
 
-  const descargarReporteLibro = () => {
+  const descargarReporteLibro = async () => {
     try {
       const doc = new jsPDF();
+      
+      const logo = await loadImage(LOGO_URL);
+      if (logo) {
+          doc.addImage(logo, 'PNG', 170, 10, 25, 25);
+      }
+
       doc.setFontSize(16);
       doc.text('Libro de Pagos Verificados (Ingresos)', 14, 20);
       doc.setFontSize(10);

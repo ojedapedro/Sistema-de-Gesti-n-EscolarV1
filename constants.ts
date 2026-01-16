@@ -1,3 +1,4 @@
+
 import { NivelEducativo } from './types';
 
 // IMPORTANTE:
@@ -5,7 +6,7 @@ import { NivelEducativo } from './types';
 // 2. Ejecuta la función 'setup' una vez.
 // 3. Haz Deploy > Nueva implementación > Tipo: Web App > Acceso: Cualquier persona (Anyone).
 // 4. Pega la URL generada aquí abajo:
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwfkJjOZ-85UvXnSKMjj7Cm9l_yeQrWSbSoDVzRW9sgNeJWGx7GejGs4UsxdSfTotcq/exec"; 
+export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxO5IXvOAe8XqZLAOsqkZ1P1P_grU1hZCX_BHt1pvF8_LbWZROQU55FWfke3wpHbXTB/exec"; 
 
 export const MENSUALIDADES: Record<NivelEducativo, number> = {
   [NivelEducativo.MATERNAL]: 120,
@@ -26,6 +27,8 @@ export const MENSUALIDADES: Record<NivelEducativo, number> = {
 };
 
 export const ANIO_ESCOLAR_ACTUAL = "2025-26";
+
+export const LOGO_URL = "https://i.ibb.co/FbHJbvVT/images.png";
 
 // Ayuda para detectar si requiere verificación manual
 export const REQUIERE_VERIFICACION = [

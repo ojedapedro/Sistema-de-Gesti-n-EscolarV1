@@ -6,7 +6,7 @@ import autoTable from 'jspdf-autotable';
 import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo } from '../types';
-import { MENSUALIDADES } from '../constants';
+import { MENSUALIDADES, LOGO_URL } from '../constants';
 
 type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA';
 
@@ -30,6 +30,28 @@ interface DeudaCalculada {
   esMoroso: boolean;
   detallesAlumnos: DetalleAlumnoDeuda[];
 }
+
+// Helper
+const loadImage = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+  });
+};
 
 export const Reportes: React.FC = () => {
   // Estado de Datos
@@ -89,9 +111,6 @@ export const Reportes: React.FC = () => {
     const now = new Date();
     const currentMonth = now.getMonth(); 
     let meses = 0;
-    // Septiembre (8) starts year. 
-    // If current is Sept (8) => 1 month due.
-    // If current is Jan (0) => Sept, Oct, Nov, Dec (4) + Jan (1) = 5.
     if (currentMonth >= 8) { 
        meses = currentMonth - 7; 
     } else { 
@@ -110,10 +129,8 @@ export const Reportes: React.FC = () => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
         const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
         
-        // Deuda acumulada del estudiante hasta la fecha (Precio Mensual * Meses Transcurridos)
         const costoTotalAlumno = precioMensual * mesesTranscurridos;
         
-        // Pagos específicos a este alumno
         const pagosAlumno = _pagos.filter(p => 
           p.cedulaRepresentante === rep.cedula && 
           p.estado === EstadoPago.VERIFICADO &&
@@ -134,12 +151,10 @@ export const Reportes: React.FC = () => {
         };
       });
 
-      // Sumar pagos verificados TOTALES del representante (incluyendo los 'VARIOS' o sin ID específico)
       const totalPagadoRep = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
-      // El saldo pendiente global toma en cuenta todos los pagos, incluso si no están asignados a un alumno específico
       const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
 
       return {
@@ -166,8 +181,6 @@ export const Reportes: React.FC = () => {
     }
   };
 
-  // --- Lógica de Filtrado para Reportes ---
-
   const obtenerDatosFiltrados = () => {
     if (tipoReporte === 'TRANSACCIONES') {
       return pagos.filter(p => {
@@ -183,7 +196,6 @@ export const Reportes: React.FC = () => {
         return cumpleCedula && cumpleEstado && cumpleFecha;
       }).sort((a,b) => new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime());
     } else {
-      // Reporte de Solvencia
       return solvencias.filter(s => {
         const cumpleCedula = filtroCedula ? s.cedula.includes(filtroCedula) : true;
         const cumpleEstado = filtroEstadoSolvencia === 'TODOS'
@@ -205,11 +217,17 @@ export const Reportes: React.FC = () => {
     }
   };
 
-  const generarPDF = () => {
+  const generarPDF = async () => {
     setDownloading(true);
     try {
       const doc = new jsPDF();
       const datos = obtenerDatosFiltrados();
+      
+      // Logo en la esquina derecha
+      const logo = await loadImage(LOGO_URL);
+      if (logo) {
+          doc.addImage(logo, 'PNG', 170, 10, 25, 25);
+      }
 
       // Encabezado
       doc.setFontSize(18);
@@ -257,7 +275,6 @@ export const Reportes: React.FC = () => {
       } else {
         // SOLVENCIA
         const data = (datos as DeudaCalculada[]).map(s => {
-          // Filtrar qué alumnos mostrar en el reporte basado en los filtros de UI (Grado y Sección)
           const alumnosParaReporte = s.detallesAlumnos.filter(alu => {
               let match = true;
               if (filtroNivel !== 'TODOS') match = match && alu.nivel === filtroNivel;
@@ -265,17 +282,14 @@ export const Reportes: React.FC = () => {
               return match;
           });
           
-          // Si el filtro arroja alumnos, mostrar solo esos. Si no hay filtros activos (TODOS), mostrar todos.
           const alumnosMostrar = alumnosParaReporte.length > 0 ? alumnosParaReporte : s.detallesAlumnos;
-
-          // Formatear la columna de Alumnos con Nombre y Sección
           const textoAlumnos = alumnosMostrar.map(a => `${a.nombre} (Sec: ${a.seccion})`).join('\n');
 
           return [
             s.cedula,
             s.nombre,
             s.matricula,
-            textoAlumnos, // Aquí se muestran los alumnos filtrados
+            textoAlumnos, 
             `$${s.deudaEsperada.toFixed(2)}`,
             `$${s.totalPagado.toFixed(2)}`,
             `$${s.saldoPendiente.toFixed(2)}`,

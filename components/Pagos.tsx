@@ -2,10 +2,32 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
-import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES } from '../constants';
+import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, LOGO_URL } from '../constants';
 import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag, FileBarChart } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+// Helper para cargar imagen
+const loadImage = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+  });
+};
 
 export const Pagos: React.FC = () => {
   // Estado Principal
@@ -168,7 +190,6 @@ export const Pagos: React.FC = () => {
         const allPagos = await db.getPagos();
 
         // 2. Filtrar por la fecha seleccionada en el formulario (fechaOperacion)
-        // Se considera la 'fechaPago' (contable) para el cierre
         const pagosDelDia = allPagos.filter(p => 
             p.fechaPago === fechaOperacion && 
             p.estado === EstadoPago.VERIFICADO // Solo pagos efectivos/verificados
@@ -180,7 +201,7 @@ export const Pagos: React.FC = () => {
             return;
         }
 
-        // 3. Calcular Totales por Método
+        // 3. Calcular Totales
         const resumenMetodos: Record<string, { count: number, totalUSD: number, totalBs: number }> = {};
         
         pagosDelDia.forEach(p => {
@@ -192,12 +213,16 @@ export const Pagos: React.FC = () => {
             resumenMetodos[p.metodoPago].totalBs += (p.montoBolivares || 0);
         });
 
-        // Totales Generales
         const totalGeneralUSD = pagosDelDia.reduce((sum, p) => sum + (p.monto || 0), 0);
         const totalGeneralBs = pagosDelDia.reduce((sum, p) => sum + (p.montoBolivares || 0), 0);
 
         // 4. Generar PDF
         const doc = new jsPDF();
+        const logo = await loadImage(LOGO_URL);
+        if (logo) {
+             // Logo en la esquina superior derecha
+             doc.addImage(logo, 'PNG', 170, 10, 25, 25);
+        }
         
         // Encabezado
         doc.setFontSize(18);
@@ -234,10 +259,10 @@ export const Pagos: React.FC = () => {
         doc.text("Detalle de Movimientos", 14, finalY);
 
         const bodyDetalle = pagosDelDia.map(p => [
-            p.nombreRepresentante.substring(0, 20), // Truncar nombre largo
+            p.nombreRepresentante.substring(0, 20),
             p.metodoPago,
             p.referencia,
-            `${p.mes || '-'} / ${p.formaPago || '-'}`, // Concepto breve
+            `${p.mes || '-'} / ${p.formaPago || '-'}`,
             `$${(p.monto || 0).toFixed(2)}`,
             p.montoBolivares ? `Bs. ${p.montoBolivares.toFixed(2)}` : '-'
         ]);
@@ -250,7 +275,6 @@ export const Pagos: React.FC = () => {
             headStyles: { fillColor: [100, 100, 100] },
         });
 
-        // Espacio para firmas
         const pageHeight = doc.internal.pageSize.height;
         doc.line(40, pageHeight - 30, 90, pageHeight - 30);
         doc.text("Cajero / Responsable", 45, pageHeight - 25);
@@ -310,7 +334,6 @@ export const Pagos: React.FC = () => {
           if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
       }
 
-      // Construcción de Observaciones
       let obsFinal = observaciones;
       if (nombreEstudiante !== "VARIOS" && !obsFinal) {
           obsFinal = `Pago de ${nombreEstudiante}`;
@@ -320,10 +343,8 @@ export const Pagos: React.FC = () => {
           obsFinal += ` [PRONTO PAGO APLICADO: -$${descuento}]`;
       }
 
-      // Calcular Nuevo Saldo para el Recibo
       const nuevoSaldo = saldoReal - montoNum;
       
-      // Guardamos estado para el recibo antes de limpiar el formulario
       setSaldoAnteriorRecibo(saldoReal);
       setSaldoFinalRecibo(nuevoSaldo);
 
@@ -332,8 +353,8 @@ export const Pagos: React.FC = () => {
       const nuevoPago: RegistroPago = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
-        fechaRegistro: new Date().toISOString().split('T')[0], // Fecha Auditoría (Hoy)
-        fechaPago: fechaOperacion, // Fecha Seleccionada (Contable)
+        fechaRegistro: new Date().toISOString().split('T')[0],
+        fechaPago: fechaOperacion,
         cedulaRepresentante: representante.cedula,
         nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
         matricula: representante.matricula,
@@ -352,15 +373,11 @@ export const Pagos: React.FC = () => {
 
       await db.savePago(nuevoPago);
       
-      // Actualizamos estado de éxito para mostrar el botón de descarga
       setPagoExitoso(nuevoPago);
-
       setMonto('');
       setMontoBs('');
       setReferencia('');
       setObservaciones('');
-      
-      // Actualizar saldo visual en pantalla (sin recargar todo el representante necesariamente)
       setSaldoReal(nuevoSaldo);
       
     } catch (e) {
@@ -371,7 +388,7 @@ export const Pagos: React.FC = () => {
     }
   };
 
-  const generarReciboPDF = () => {
+  const generarReciboPDF = async () => {
     if (!pagoExitoso || !representante) return;
     try {
         const doc = new jsPDF();
@@ -380,6 +397,13 @@ export const Pagos: React.FC = () => {
         // --- HEADER ---
         doc.setFillColor(63, 81, 181); // Indigo
         doc.rect(0, 0, pageWidth, 40, 'F');
+        
+        // Insertar Logo (Izquierda)
+        const logo = await loadImage(LOGO_URL);
+        if (logo) {
+            doc.addImage(logo, 'PNG', 10, 5, 30, 30);
+        }
+
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
@@ -492,6 +516,7 @@ export const Pagos: React.FC = () => {
 
         doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
     } catch (e) {
+        console.error(e);
         alert("Error al generar el PDF.");
     }
   };
@@ -500,7 +525,6 @@ export const Pagos: React.FC = () => {
   const mensualidadFamiliar = calcularMensualidadFamiliar();
   const descuentoProntoPago = calcularDescuentoProntoPago();
   
-  // Lógica de desglose para visualización
   const deudaVencida = Math.max(0, saldoReal - mensualidadFamiliar);
   const deudaMesActual = saldoReal > 0 ? Math.min(saldoReal, mensualidadFamiliar) : 0;
 
@@ -729,8 +753,6 @@ export const Pagos: React.FC = () => {
                     onClick={() => {
                         setFormaPago('Total');
                         if(saldoReal > 0) {
-                            // Si aplica pronto pago, el monto a pagar es Saldo - Descuento
-                            // El sistema registrará este monto neto.
                             const montoFinal = aplicarProntoPago 
                                 ? Math.max(0, saldoReal - descuentoProntoPago) 
                                 : saldoReal;

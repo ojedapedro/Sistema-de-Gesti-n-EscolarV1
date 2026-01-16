@@ -4,6 +4,29 @@ import { db } from '../services/db';
 import { RegistroPago, EstadoPago, Representante } from '../types';
 import { Check, X, AlertTriangle, RefreshCw, Search, Monitor, Loader2, Printer } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { LOGO_URL } from '../constants';
+
+// Helper
+const loadImage = (url: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+  });
+};
 
 export const Verificacion: React.FC = () => {
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
@@ -47,19 +70,23 @@ export const Verificacion: React.FC = () => {
     cargarPagos();
   }, [activeTab, filtroRef]);
 
-  const generarReciboAprobacion = (pago: RegistroPago, rep: Representante, saldoRestante: number) => {
+  const generarReciboAprobacion = async (pago: RegistroPago, rep: Representante, saldoRestante: number) => {
     try {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.width;
         
         // --- CÁLCULOS VISUALES ---
-        // Como el pago YA se aprobó en BD, el saldoRestante es el saldo final.
-        // El saldo anterior era: Saldo Final + Monto Pagado.
         const saldoAnterior = saldoRestante + pago.monto;
 
         // --- HEADER ---
         doc.setFillColor(63, 81, 181); // Indigo
         doc.rect(0, 0, pageWidth, 40, 'F');
+        
+        const logo = await loadImage(LOGO_URL);
+        if (logo) {
+            doc.addImage(logo, 'PNG', 10, 5, 30, 30);
+        }
+
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
@@ -186,14 +213,10 @@ export const Verificacion: React.FC = () => {
         
         // 2. Si se aprueba, calcular saldo y generar recibo
         if (accion === 'APROBAR' || accion === 'RECUPERAR') {
-             // Obtener datos frescos del representante
              const rep = await db.getRepresentanteByCedula(pago.cedulaRepresentante);
-             
-             // Calcular saldo YA con el pago verificado (porque actualizamos en el paso 1)
              const saldoActual = await db.calcularSaldoPendiente(pago.cedulaRepresentante);
-
              if (rep) {
-                 generarReciboAprobacion(pago, rep, saldoActual);
+                 await generarReciboAprobacion(pago, rep, saldoActual);
              }
         }
 
