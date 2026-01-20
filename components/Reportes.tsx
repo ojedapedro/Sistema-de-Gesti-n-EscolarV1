@@ -10,6 +10,7 @@ import { MENSUALIDADES, LOGO_URL } from '../constants';
 
 type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA';
 
+// Interfaces para el detalle
 interface DetalleAlumnoDeuda {
   nombre: string;
   nivel: string;
@@ -125,12 +126,16 @@ export const Reportes: React.FC = () => {
     const resultados: DeudaCalculada[] = reps.map(rep => {
       let deudaEsperadaTotal = 0;
       
+      // Calcular detalle por cada alumno
       const detallesAlumnos: DetalleAlumnoDeuda[] = rep.alumnos.map(alu => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
         const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
         
+        // Costo acumulado hasta la fecha
         const costoTotalAlumno = precioMensual * mesesTranscurridos;
         
+        // Pagos específicos de este alumno (o pagos generales 'VARIOS' distribuidos proporcionalmente, 
+        // pero para este detalle estricto filtramos por studentId si existe)
         const pagosAlumno = _pagos.filter(p => 
           p.cedulaRepresentante === rep.cedula && 
           p.estado === EstadoPago.VERIFICADO &&
@@ -151,10 +156,12 @@ export const Reportes: React.FC = () => {
         };
       });
 
+      // Calcular total pagado por el representante (incluyendo pagos "VARIOS")
       const totalPagadoRep = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
+      // El saldo pendiente global es la deuda total de todos los hijos menos todo lo que ha pagado el padre
       const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
 
       return {
@@ -275,6 +282,7 @@ export const Reportes: React.FC = () => {
       } else {
         // SOLVENCIA
         const data = (datos as DeudaCalculada[]).map(s => {
+          // Si hay filtro de nivel/sección, mostrar solo esos alumnos en la descripción
           const alumnosParaReporte = s.detallesAlumnos.filter(alu => {
               let match = true;
               if (filtroNivel !== 'TODOS') match = match && alu.nivel === filtroNivel;
@@ -546,32 +554,41 @@ export const Reportes: React.FC = () => {
                         {tipoReporte === 'SOLVENCIA' && expandedRow === item.cedula && (
                           <tr className="bg-slate-50">
                             <td colSpan={7} className="px-8 py-4 border-b">
-                              <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                                <div className="px-4 py-2 bg-slate-100 border-b border-gray-200 text-xs font-bold text-slate-700">
-                                  Detalle por Alumno (Matrícula: {item.matricula})
+                              <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-inner">
+                                <div className="px-4 py-2 bg-slate-100 border-b border-gray-200 text-xs font-bold text-slate-700 uppercase tracking-wider flex justify-between">
+                                  <span>Detalle Financiero por Estudiante</span>
+                                  <span>Matrícula: {item.matricula}</span>
                                 </div>
                                 <table className="w-full text-xs">
-                                  <thead className="bg-gray-50 text-gray-500">
+                                  <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
                                     <tr>
-                                      <th className="px-4 py-2 text-left">Alumno</th>
-                                      <th className="px-4 py-2 text-left">Nivel</th>
-                                      <th className="px-4 py-2 text-right">Costo Asignado (Acumulado)</th>
-                                      <th className="px-4 py-2 text-right">Pagado (Verificado)</th>
-                                      <th className="px-4 py-2 text-right">Pendiente</th>
+                                      <th className="px-4 py-3 text-left">Alumno</th>
+                                      <th className="px-4 py-3 text-left">Nivel (Sección)</th>
+                                      <th className="px-4 py-3 text-right">Costo Calculado</th>
+                                      <th className="px-4 py-3 text-right">Total Pagado</th>
+                                      <th className="px-4 py-3 text-right">Deuda Pendiente</th>
+                                      <th className="px-4 py-3 text-center">Estado</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
                                     {item.detallesAlumnos.map((alu: DetalleAlumnoDeuda, i: number) => (
-                                      <tr key={i}>
-                                        <td className="px-4 py-2 font-medium text-slate-700">{alu.nombre}</td>
-                                        <td className="px-4 py-2 text-gray-500">{alu.nivel} ({alu.seccion})</td>
-                                        <td className="px-4 py-2 text-right font-mono">${alu.costo.toFixed(2)}</td>
-                                        <td className="px-4 py-2 text-right font-mono text-green-600">${alu.pagado.toFixed(2)}</td>
-                                        <td className="px-4 py-2 text-right font-mono font-bold text-red-600">${alu.pendiente.toFixed(2)}</td>
+                                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-4 py-3 font-medium text-slate-700">{alu.nombre}</td>
+                                        <td className="px-4 py-3 text-gray-500">{alu.nivel} <span className="text-gray-400">({alu.seccion})</span></td>
+                                        <td className="px-4 py-3 text-right font-mono text-gray-500">${alu.costo.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-green-600 font-medium">${alu.pagado.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-bold text-red-600">${alu.pendiente.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            {alu.pendiente > 0 ? (
+                                                <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">DEBE</span>
+                                            ) : (
+                                                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">AL DÍA</span>
+                                            )}
+                                        </td>
                                       </tr>
                                     ))}
                                     {item.detallesAlumnos.length === 0 && (
-                                      <tr><td colSpan={5} className="px-4 py-2 text-center text-gray-400">Sin alumnos registrados</td></tr>
+                                      <tr><td colSpan={6} className="px-4 py-4 text-center text-gray-400 italic">Sin alumnos registrados</td></tr>
                                     )}
                                   </tbody>
                                 </table>
