@@ -62,6 +62,9 @@ export const Dashboard: React.FC = () => {
     .filter(p => p.estado === EstadoPago.VERIFICADO)
     .reduce((sum, p) => sum + (p.monto || 0), 0);
 
+  // Cálculo en Bs
+  const totalRecaudadoHistoricoBs = totalRecaudadoHistorico * (tasa || 0);
+
   const pagosPendientes = pagos.filter(p => p.estado === EstadoPago.PENDIENTE_VERIFICACION).length;
   const totalAlumnos = reps.reduce((sum, r) => sum + r.alumnos.length, 0);
 
@@ -91,7 +94,7 @@ export const Dashboard: React.FC = () => {
       }
   });
 
-  // Cálculo en Bolívares
+  // Cálculo en Bolívares de Morosidad
   const totalMorosidadBs = totalMorosidad * (tasa || 0);
 
 
@@ -184,6 +187,7 @@ export const Dashboard: React.FC = () => {
             <div>
                 <p className="text-sm text-gray-500 font-medium">Recaudado Histórico</p>
                 <h3 className="text-2xl font-bold text-slate-800">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-sm font-semibold text-green-600">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
                 <p className="text-xs text-green-600 font-medium mt-1">Total acumulado</p>
             </div>
         </div>
