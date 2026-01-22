@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, LOGO_URL } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag, FileBarChart } from 'lucide-react';
+import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag, FileBarChart, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -64,6 +64,9 @@ export const Pagos: React.FC = () => {
   const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
   const [saldoAnteriorRecibo, setSaldoAnteriorRecibo] = useState(0);
   const [saldoFinalRecibo, setSaldoFinalRecibo] = useState(0);
+
+  // Modal Duplicado
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   const meses = ['Inscripción', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto'];
 
@@ -292,39 +295,17 @@ export const Pagos: React.FC = () => {
     }
   };
 
-  const procesarPago = async () => {
-    if (!representante || !monto || !referencia) {
-      setError('Complete todos los campos del pago');
-      return;
-    }
-
-    const montoNum = parseFloat(monto);
-    if (isNaN(montoNum) || montoNum <= 0) {
-      setError('Monto inválido');
-      return;
-    }
-
+  // --- FUNCIÓN DE GUARDADO (EXTRAÍDA) ---
+  const ejecutarGuardadoPago = async () => {
+    if (!representante) return;
+    
     setLoading(true);
+    setShowDuplicateModal(false);
 
     try {
-      // 1. VERIFICACIÓN DE DUPLICADOS
-      const historialPagos = await db.getPagos();
-      const posibleDuplicado = historialPagos.find(p => 
-          p.cedulaRepresentante === representante.cedula &&
-          p.referencia.trim().toUpperCase() === referencia.trim().toUpperCase() &&
-          Math.abs(p.monto - montoNum) < 0.01 
-      );
-
-      if (posibleDuplicado) {
-          setLoading(false); 
-          const confirmarDuplicado = window.confirm(
-              `⚠️ ALERTA DE DUPLICADO ⚠️\n\nReferencia: ${referencia}\nMonto: $${montoNum}\n\n¿Registrar nuevamente?`
-          );
-          if (!confirmarDuplicado) return;
-          setLoading(true);
-      }
-
-      // 2. LÓGICA DE ESTADO
+      const montoNum = parseFloat(monto);
+      
+      // 2. LÓGICA DE ESTADO Y CONSTRUCCIÓN DE OBJETO
       const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
       const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
       
@@ -384,6 +365,45 @@ export const Pagos: React.FC = () => {
       console.error(e);
       alert("Error procesando el pago. Verifique conexión.");
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const procesarPago = async () => {
+    if (!representante || !monto || !referencia) {
+      setError('Complete todos los campos del pago');
+      return;
+    }
+
+    const montoNum = parseFloat(monto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      setError('Monto inválido');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 1. VERIFICACIÓN DE DUPLICADOS
+      const historialPagos = await db.getPagos();
+      const posibleDuplicado = historialPagos.find(p => 
+          p.cedulaRepresentante === representante.cedula &&
+          p.referencia.trim().toUpperCase() === referencia.trim().toUpperCase() &&
+          Math.abs(p.monto - montoNum) < 0.01 
+      );
+
+      if (posibleDuplicado) {
+          setLoading(false); 
+          setShowDuplicateModal(true); // Mostrar Modal
+          return;
+      }
+
+      // Si no es duplicado, guardar directo
+      await ejecutarGuardadoPago();
+      
+    } catch (e) {
+      console.error(e);
+      alert("Error en validación previa. Verifique conexión.");
       setLoading(false);
     }
   };
@@ -832,6 +852,59 @@ export const Pagos: React.FC = () => {
               {loading ? 'Procesando...' : 'Registrar Operación'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Modal de Alerta de Duplicado */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200">
+               <div className="bg-orange-50 p-6 border-b border-orange-100 flex items-center gap-4">
+                  <div className="bg-orange-100 p-2 rounded-full">
+                     <AlertTriangle className="text-orange-600" size={32} />
+                  </div>
+                  <div>
+                      <h3 className="text-lg font-bold text-orange-800">Posible Pago Duplicado</h3>
+                      <p className="text-sm text-orange-700">Ya existe una transacción similar.</p>
+                  </div>
+               </div>
+               
+               <div className="p-6 space-y-4">
+                  <p className="text-gray-600 text-sm">
+                    El sistema ha detectado que la referencia <b>{referencia}</b> ya fue registrada para este representante con el mismo monto.
+                  </p>
+                  <div className="bg-gray-50 p-4 rounded-lg text-sm border border-gray-200">
+                      <div className="flex justify-between mb-2">
+                          <span className="text-gray-500">Referencia:</span>
+                          <span className="font-mono font-bold text-gray-800">{referencia}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-gray-500">Monto:</span>
+                          <span className="font-mono font-bold text-gray-800">${parseFloat(monto).toFixed(2)}</span>
+                      </div>
+                  </div>
+                  <p className="text-xs text-gray-500 italic">
+                    ¿Desea registrar este pago de todas formas? (Podría generar inconsistencias).
+                  </p>
+               </div>
+
+               <div className="p-4 bg-gray-50 flex gap-3 border-t border-gray-100">
+                   <button 
+                     onClick={() => { setShowDuplicateModal(false); setLoading(false); }}
+                     className="flex-1 bg-white text-gray-700 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium"
+                   >
+                     Cancelar
+                   </button>
+                   <button 
+                     onClick={ejecutarGuardadoPago}
+                     disabled={loading}
+                     className="flex-1 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 font-bold flex justify-center items-center gap-2"
+                   >
+                     {loading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                     Registrar Duplicado
+                   </button>
+               </div>
+           </div>
         </div>
       )}
     </div>
