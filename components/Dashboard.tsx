@@ -83,6 +83,9 @@ export const Dashboard: React.FC = () => {
       }
   });
 
+  // Cálculo en Bolívares
+  const totalMorosidadBs = totalMorosidad * (tasa || 0);
+
 
   // --- Cálculos Mes Actual ---
   const fechaActual = new Date();
@@ -146,7 +149,8 @@ export const Dashboard: React.FC = () => {
             <div>
                 <p className="text-sm text-gray-500 font-medium">Morosidad Pendiente</p>
                 <h3 className="text-2xl font-bold text-red-600">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-                <p className="text-xs text-red-400 font-medium mt-1">Deuda por cobrar</p>
+                <p className="text-sm font-semibold text-red-500">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
+                <p className="text-xs text-gray-400 mt-1">Deuda por cobrar</p>
             </div>
         </div>
 
