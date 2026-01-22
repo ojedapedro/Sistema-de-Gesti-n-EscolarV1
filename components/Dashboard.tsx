@@ -139,19 +139,16 @@ export const Dashboard: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey: apiKey });
         
         const prompt = `
-            Actúa como un experto analista financiero para un colegio. 
-            Analiza los siguientes datos del mes actual (${nombreMes} ${anioActual}):
-            
-            - Ingresos Totales del Mes: $${totalMesUSD.toFixed(2)}
-            - Total Transacciones Verificadas: ${pagosDelMes.length}
-            - Método de Pago más usado: ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'Ninguno'}
-            - Morosidad Global Acumulada (Deuda de padres): $${totalMorosidad.toFixed(2)}
-            - Pagos Pendientes por Verificar (Cola de trabajo): ${pagosPendientes}
-            
-            Instrucciones:
-            1. Genera un resumen ejecutivo breve (máximo 40 palabras) sobre el desempeño del mes.
-            2. Da una recomendación financiera corta y accionable.
-            3. Usa un tono profesional pero directo.
+            Analiza el cierre administrativo de ${nombreMes} ${anioActual} con estos indicadores clave:
+
+            1. FLUJO DE CAJA: $${totalMesUSD.toFixed(2)} recaudados (${pagosDelMes.length} ops).
+            2. CUENTAS POR COBRAR (Morosidad Global): $${totalMorosidad.toFixed(2)}.
+            3. CARGA OPERATIVA: ${pagosPendientes} pagos en cola de verificación.
+            4. TENDENCIA PAGO: Mayoría paga vía ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'N/A'}.
+
+            Genera un reporte directivo ultra-conciso (Máximo 50 palabras) con este formato estricto:
+            **Diagnóstico:** [1 frase evaluando la salud financiera actual (Crítica/Estable/Óptima) comparando ingresos vs deuda].
+            **Acción Clave:** [1 recomendación administrativa específica: ej. "Priorizar verificación de cola", "Activar cobranza telefónica agresiva", "Incentivar pronto pago"].
         `;
 
         const response = await ai.models.generateContent({
