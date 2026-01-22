@@ -1,9 +1,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
-import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown } from 'lucide-react';
+import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown, Bot, Sparkles } from 'lucide-react';
 import { EstadoPago, RegistroPago, Representante, NivelConfig } from '../types';
 import { MENSUALIDADES } from '../constants';
+import { GoogleGenAI } from "@google/genai";
 
 export const Dashboard: React.FC = () => {
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
@@ -11,6 +12,11 @@ export const Dashboard: React.FC = () => {
   const [niveles, setNiveles] = useState<NivelConfig[]>([]);
   const [tasa, setTasa] = useState(0);
   const [loading, setLoading] = useState(true);
+  
+  // Estado para IA
+  const [aiSummary, setAiSummary] = useState('');
+  const [generatingAI, setGeneratingAI] = useState(false);
+  const hasApiKey = !!process.env.API_KEY;
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -117,6 +123,42 @@ export const Dashboard: React.FC = () => {
   const maxValChart = values.length > 0 ? Math.max(...values, 1) : 1;
   const metodosOrdenados = Object.entries(metodosData).sort((a,b) => b[1] - a[1]);
 
+  // --- Función Análisis IA ---
+  const generarAnalisisIA = async () => {
+    if (!process.env.API_KEY) return;
+    setGeneratingAI(true);
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        const prompt = `
+            Actúa como un experto analista financiero para un colegio. 
+            Analiza los siguientes datos del mes actual (${nombreMes} ${anioActual}):
+            
+            - Ingresos Totales del Mes: $${totalMesUSD.toFixed(2)}
+            - Total Transacciones Verificadas: ${pagosDelMes.length}
+            - Método de Pago más usado: ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'Ninguno'}
+            - Morosidad Global Acumulada (Deuda de padres): $${totalMorosidad.toFixed(2)}
+            - Pagos Pendientes por Verificar (Cola de trabajo): ${pagosPendientes}
+            
+            Instrucciones:
+            1. Genera un resumen ejecutivo breve (máximo 40 palabras) sobre el desempeño del mes.
+            2. Da una recomendación financiera corta y accionable.
+            3. Usa un tono profesional pero directo.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt
+        });
+        setAiSummary(response.text || "No se pudo generar el análisis.");
+    } catch (e) {
+        console.error(e);
+        setAiSummary("Error conectando con el servicio de IA.");
+    } finally {
+        setGeneratingAI(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
@@ -176,6 +218,51 @@ export const Dashboard: React.FC = () => {
             </div>
         </div>
       </div>
+      
+      {/* TARJETA IA: Análisis Financiero */}
+      {hasApiKey && (
+        <div className="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5">
+                <Bot size={120} />
+            </div>
+            <div className="flex flex-col md:flex-row gap-6 relative z-10">
+                <div className="flex-shrink-0 flex items-start">
+                    <div className="bg-indigo-600 p-3 rounded-lg text-white shadow-lg">
+                        <Sparkles size={24} />
+                    </div>
+                </div>
+                <div className="flex-1">
+                    <h3 className="text-lg font-bold text-indigo-900 mb-2">Análisis Financiero Inteligente (Mes Actual)</h3>
+                    
+                    {!aiSummary && !generatingAI && (
+                        <p className="text-indigo-700/70 text-sm mb-4">
+                            Utilice la inteligencia artificial para analizar el rendimiento de la recaudación de {nombreMes}, tendencias de pago y niveles de morosidad.
+                        </p>
+                    )}
+
+                    {generatingAI && (
+                        <div className="flex items-center gap-2 text-indigo-600 text-sm py-2">
+                            <Loader2 className="animate-spin" size={16} /> Analizando transacciones y tendencias...
+                        </div>
+                    )}
+
+                    {aiSummary && (
+                        <div className="bg-white/60 p-4 rounded-lg border border-indigo-100 text-sm text-slate-700 leading-relaxed mb-4 animate-in fade-in">
+                            <p className="whitespace-pre-wrap">{aiSummary}</p>
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={generarAnalisisIA}
+                        disabled={generatingAI}
+                        className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis con IA')}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* SECCIÓN: Resumen del Mes Actual */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
