@@ -16,7 +16,9 @@ export const Dashboard: React.FC = () => {
   // Estado para IA
   const [aiSummary, setAiSummary] = useState('');
   const [generatingAI, setGeneratingAI] = useState(false);
-  const hasApiKey = !!process.env.API_KEY;
+  
+  // Verificamos la llave, pero no condicionamos la vista completa a ella
+  const apiKey = process.env.API_KEY;
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -125,10 +127,13 @@ export const Dashboard: React.FC = () => {
 
   // --- Función Análisis IA ---
   const generarAnalisisIA = async () => {
-    if (!process.env.API_KEY) return;
+    if (!apiKey) {
+        alert("API Key no configurada en el entorno.");
+        return;
+    }
     setGeneratingAI(true);
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: apiKey });
         
         const prompt = `
             Actúa como un experto analista financiero para un colegio. 
@@ -219,9 +224,8 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
       
-      {/* TARJETA IA: Análisis Financiero */}
-      {hasApiKey && (
-        <div className="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
+      {/* TARJETA IA: Análisis Financiero - SIEMPRE VISIBLE */}
+      <div className="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-5">
                 <Bot size={120} />
             </div>
@@ -252,17 +256,24 @@ export const Dashboard: React.FC = () => {
                         </div>
                     )}
 
-                    <button 
-                        onClick={generarAnalisisIA}
-                        disabled={generatingAI}
-                        className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2"
-                    >
-                        {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis con IA')}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={generarAnalisisIA}
+                            disabled={generatingAI || !apiKey}
+                            className={`text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 ${(!apiKey || generatingAI) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis con IA')}
+                        </button>
+                        
+                        {!apiKey && (
+                            <span className="text-xs text-red-500 font-medium bg-red-50 px-2 py-1 rounded border border-red-100">
+                                Sin API Key configurada
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
-      )}
+      </div>
 
       {/* SECCIÓN: Resumen del Mes Actual */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
