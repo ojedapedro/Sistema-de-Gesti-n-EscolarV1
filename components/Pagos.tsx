@@ -294,6 +294,150 @@ export const Pagos: React.FC = () => {
         setLoadingReporte(false);
     }
   };
+  
+  // --- FUNCIÓN GENERACIÓN RECIBO INDIVIDUAL (Modificada) ---
+  const generarReciboPDF = async (pagoOverride?: RegistroPago, saldoFinalOverride?: number, saldoAnteriorOverride?: number) => {
+    // Usar datos pasados por parámetro (prioridad) o estado actual
+    const elPago = pagoOverride || pagoExitoso;
+    const elSaldoFinal = saldoFinalOverride !== undefined ? saldoFinalOverride : saldoFinalRecibo;
+    const elSaldoAnterior = saldoAnteriorOverride !== undefined ? saldoAnteriorOverride : saldoAnteriorRecibo;
+
+    if (!elPago || !representante) return;
+    
+    try {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+        
+        // --- HEADER ---
+        doc.setFillColor(63, 81, 181); // Indigo
+        doc.rect(0, 0, pageWidth, 40, 'F');
+        
+        // Insertar Logo (Izquierda)
+        const logo = await loadImage(LOGO_URL);
+        if (logo) {
+            doc.addImage(logo, 'PNG', 10, 5, 30, 30);
+        }
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        
+        // Lógica de Título Dinámico
+        const tituloRecibo = elSaldoFinal <= 0 
+            ? "PAGO TOTAL / SOLVENTE" 
+            : "COMPROBANTE DE ABONO";
+
+        doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
+        doc.setFontSize(12);
+        doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
+
+        // --- INFO GENERAL ---
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
+        doc.text(`Fecha Operación: ${elPago.fechaPago}`, 14, 56);
+        doc.text(`Recibo N°: ${elPago.id.substring(0, 8).toUpperCase()}`, 14, 62);
+        
+        doc.setDrawColor(200, 200, 200);
+        doc.line(14, 68, pageWidth - 14, 68);
+        
+        // --- DATOS REPRESENTANTE ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DATOS DEL REPRESENTANTE", 14, 78);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 86);
+        doc.text(`Cédula: ${representante.cedula}`, 14, 92);
+        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 98);
+
+        // --- DETALLES TRANSACCIÓN ---
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 113);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+
+        const startY = 123;
+        const col2 = pageWidth / 2;
+
+        doc.text(`Concepto: ${elPago.mes} ${elPago.anio}`, 14, startY);
+        let nombreAlumno = "Todos / Varios";
+        if (elPago.studentId && elPago.studentId !== "VARIOS") {
+            const alumno = representante.alumnos.find(a => a.id === elPago.studentId);
+            if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
+        }
+        doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
+        doc.text(`Método: ${elPago.metodoPago}`, col2, startY);
+        doc.text(`Ref: ${elPago.referencia}`, col2, startY + 8);
+
+        if (elPago.tasaCambioAplicada) {
+            doc.text(`Tasa Cambio: Bs. ${elPago.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
+        }
+
+        // --- CAJA FINANCIERA (SALDOS) ---
+        const boxY = 155;
+        doc.setDrawColor(0, 0, 0);
+        doc.setFillColor(245, 247, 250);
+        doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
+
+        doc.setFont("helvetica", "bold");
+        doc.text("ESTADO DE CUENTA", 20, boxY + 10);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        
+        // Saldo Anterior
+        const textoSaldoAnt = elSaldoAnterior > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
+        doc.text(textoSaldoAnt, 20, boxY + 20);
+        const valorAntStr = `$${Math.abs(elSaldoAnterior).toFixed(2)} ${elSaldoAnterior < 0 ? '(Crédito)' : ''}`;
+        doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
+
+        // Monto Pagado
+        doc.text("Monto Cancelado (-):", 20, boxY + 28);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 100, 0); // Verde oscuro
+        doc.text(`$${(elPago.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
+        doc.setTextColor(0);
+        
+        if (elPago.montoBolivares) {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(100);
+            doc.text(`(Bs. ${elPago.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
+            doc.setTextColor(0);
+            doc.setFontSize(11);
+        }
+
+        doc.setDrawColor(200);
+        doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
+
+        // Saldo Final
+        doc.setFont("helvetica", "bold");
+        let labelFinal = "SALDO RESTANTE (DEUDOR):";
+        if (elSaldoFinal <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
+        doc.text(labelFinal, 20, boxY + 45);
+        
+        if (elSaldoFinal > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
+        else doc.setTextColor(0, 150, 0); // Verde si está a favor
+        
+        doc.text(`$${Math.abs(elSaldoFinal).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
+
+        // --- PIE ---
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(`ESTADO DEL PAGO: ${elPago.estado.toUpperCase()}`, 14, 230);
+        
+        if (elPago.observaciones) {
+            doc.setFontSize(9);
+            doc.text(`Obs: ${elPago.observaciones}`, 14, 236);
+        }
+
+        doc.save(`Recibo_${elPago.cedulaRepresentante}_${elPago.id.substring(0,4)}.pdf`);
+    } catch (e) {
+        console.error(e);
+        alert("Error al generar el PDF.");
+    }
+  };
 
   // --- FUNCIÓN DE GUARDADO (EXTRAÍDA) ---
   const ejecutarGuardadoPago = async () => {
@@ -360,6 +504,11 @@ export const Pagos: React.FC = () => {
       setReferencia('');
       setObservaciones('');
       setSaldoReal(nuevoSaldo);
+
+      // --- GENERAR RECIBO AUTOMÁTICO SI ES SOLVENTE ---
+      if (nuevoSaldo <= 0) {
+        await generarReciboPDF(nuevoPago, nuevoSaldo, saldoReal);
+      }
       
     } catch (e) {
       console.error(e);
@@ -405,139 +554,6 @@ export const Pagos: React.FC = () => {
       console.error(e);
       alert("Error en validación previa. Verifique conexión.");
       setLoading(false);
-    }
-  };
-
-  const generarReciboPDF = async () => {
-    if (!pagoExitoso || !representante) return;
-    try {
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.width;
-        
-        // --- HEADER ---
-        doc.setFillColor(63, 81, 181); // Indigo
-        doc.rect(0, 0, pageWidth, 40, 'F');
-        
-        // Insertar Logo (Izquierda)
-        const logo = await loadImage(LOGO_URL);
-        if (logo) {
-            doc.addImage(logo, 'PNG', 10, 5, 30, 30);
-        }
-
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(22);
-        
-        const tituloRecibo = saldoFinalRecibo <= 0 ? "RECIBO DE PAGO" : "COMPROBANTE DE ABONO";
-        doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
-        doc.setFontSize(12);
-        doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
-
-        // --- INFO GENERAL ---
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(10);
-        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
-        doc.text(`Fecha Operación: ${pagoExitoso.fechaPago}`, 14, 56);
-        doc.text(`Recibo N°: ${pagoExitoso.id.substring(0, 8).toUpperCase()}`, 14, 62);
-        
-        doc.setDrawColor(200, 200, 200);
-        doc.line(14, 68, pageWidth - 14, 68);
-        
-        // --- DATOS REPRESENTANTE ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("DATOS DEL REPRESENTANTE", 14, 78);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 86);
-        doc.text(`Cédula: ${representante.cedula}`, 14, 92);
-        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 98);
-
-        // --- DETALLES TRANSACCIÓN ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 113);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-
-        const startY = 123;
-        const col2 = pageWidth / 2;
-
-        doc.text(`Concepto: ${pagoExitoso.mes} ${pagoExitoso.anio}`, 14, startY);
-        let nombreAlumno = "Todos / Varios";
-        if (pagoExitoso.studentId && pagoExitoso.studentId !== "VARIOS") {
-            const alumno = representante.alumnos.find(a => a.id === pagoExitoso.studentId);
-            if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
-        }
-        doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
-        doc.text(`Método: ${pagoExitoso.metodoPago}`, col2, startY);
-        doc.text(`Ref: ${pagoExitoso.referencia}`, col2, startY + 8);
-
-        if (pagoExitoso.tasaCambioAplicada) {
-            doc.text(`Tasa Cambio: Bs. ${pagoExitoso.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
-        }
-
-        // --- CAJA FINANCIERA (SALDOS) ---
-        const boxY = 155;
-        doc.setDrawColor(0, 0, 0);
-        doc.setFillColor(245, 247, 250);
-        doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
-
-        doc.setFont("helvetica", "bold");
-        doc.text("ESTADO DE CUENTA", 20, boxY + 10);
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "normal");
-        
-        // Saldo Anterior
-        const textoSaldoAnt = saldoAnteriorRecibo > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
-        doc.text(textoSaldoAnt, 20, boxY + 20);
-        const valorAntStr = `$${Math.abs(saldoAnteriorRecibo).toFixed(2)} ${saldoAnteriorRecibo < 0 ? '(Crédito)' : ''}`;
-        doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
-
-        // Monto Pagado
-        doc.text("Monto Cancelado (-):", 20, boxY + 28);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 100, 0); // Verde oscuro
-        doc.text(`$${(pagoExitoso.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
-        doc.setTextColor(0);
-        
-        if (pagoExitoso.montoBolivares) {
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(9);
-            doc.setTextColor(100);
-            doc.text(`(Bs. ${pagoExitoso.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
-            doc.setTextColor(0);
-            doc.setFontSize(11);
-        }
-
-        doc.setDrawColor(200);
-        doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
-
-        // Saldo Final
-        doc.setFont("helvetica", "bold");
-        let labelFinal = "SALDO RESTANTE (DEUDOR):";
-        if (saldoFinalRecibo <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
-        doc.text(labelFinal, 20, boxY + 45);
-        
-        if (saldoFinalRecibo > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
-        else doc.setTextColor(0, 150, 0); // Verde si está a favor
-        
-        doc.text(`$${Math.abs(saldoFinalRecibo).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
-
-        // --- PIE ---
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: ${pagoExitoso.estado.toUpperCase()}`, 14, 230);
-        
-        if (pagoExitoso.observaciones) {
-            doc.setFontSize(9);
-            doc.text(`Obs: ${pagoExitoso.observaciones}`, 14, 236);
-        }
-
-        doc.save(`Recibo_${pagoExitoso.cedulaRepresentante}_${pagoExitoso.id.substring(0,4)}.pdf`);
-    } catch (e) {
-        console.error(e);
-        alert("Error al generar el PDF.");
     }
   };
 
@@ -675,7 +691,7 @@ export const Pagos: React.FC = () => {
                 {/* BOTÓN DESCARGA ÚLTIMO PAGO */}
                 {pagoExitoso && (
                     <button 
-                        onClick={generarReciboPDF}
+                        onClick={() => generarReciboPDF()}
                         className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold border border-indigo-200 hover:bg-indigo-200 transition-colors animate-in fade-in slide-in-from-right-5"
                     >
                         <Printer size={16} /> Descargar Recibo (Último Pago)
