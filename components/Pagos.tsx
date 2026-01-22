@@ -683,7 +683,7 @@ export const Pagos: React.FC = () => {
                 )}
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
                 <div>
                    <label className="block text-xs font-bold text-indigo-700 mb-1">Estudiante</label>
                    <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
@@ -698,6 +698,16 @@ export const Pagos: React.FC = () => {
                    <select value={mesPago} onChange={(e) => setMesPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
                       {meses.map(m => <option key={m} value={m}>{m}</option>)}
                    </select>
+                </div>
+                <div>
+                   <label className="block text-xs font-bold text-indigo-700 mb-1">Año Escolar</label>
+                   <input 
+                    type="text" 
+                    value={anioPago} 
+                    onChange={(e) => setAnioPago(e.target.value)} 
+                    className="w-full text-sm border-gray-300 rounded p-1.5" 
+                    placeholder="Ej: 2025-26"
+                   />
                 </div>
                 <div>
                    <label className="block text-xs font-bold text-indigo-700 mb-1">Fecha Operación</label>
