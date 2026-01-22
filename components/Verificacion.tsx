@@ -191,15 +191,15 @@ export const Verificacion: React.FC = () => {
     switch (accion) {
       case 'APROBAR':
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `¿Confirmar APROBACIÓN?\n\nRep: ${pago.nombreRepresentante}\nRef: ${pago.referencia}\nMonto: $${(pago.monto || 0).toFixed(2)}\n\n✅ Se generará el recibo automáticamente.`;
+        mensaje = `⚠️ CONFIRMACIÓN DE APROBACIÓN ⚠️\n\n¿Está seguro de que desea APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\n✅ Esta acción validará el ingreso y generará el recibo automáticamente.`;
         break;
       case 'RECHAZAR':
         nuevoEstado = EstadoPago.RECHAZADO;
-        mensaje = `¿Confirmar RECHAZO?\n\nRep: ${pago.nombreRepresentante}\nRef: ${pago.referencia}`;
+        mensaje = `⛔ CONFIRMACIÓN DE RECHAZO ⛔\n\n¿Está seguro de que desea RECHAZAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\n❌ El pago será marcado como inválido.`;
         break;
       case 'RECUPERAR': 
         nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `¿RECUPERAR y APROBAR este pago?\n\nSe marcará como verificado y se generará recibo.`;
+        mensaje = `🔄 CONFIRMACIÓN DE RECUPERACIÓN 🔄\n\n¿Desea RECUPERAR y APROBAR este pago previamente rechazado?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n\n✅ Se marcará como verificado y se generará el recibo.`;
         break;
       default:
         return;

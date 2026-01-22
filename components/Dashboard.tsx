@@ -165,110 +165,124 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
-        <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
-        <div className="bg-white px-4 py-2 rounded-lg shadow-sm border border-indigo-100 flex items-center gap-2">
-            <TrendingUp size={18} className="text-indigo-600"/>
-            <span className="text-sm font-medium text-gray-600">Tasa BCV:</span>
-            <span className="text-lg font-bold text-slate-800">Bs. {(tasa || 0).toFixed(2)}</span>
+    <div className="space-y-6 pb-20 md:pb-0">
+      {/* HEADER: Adaptable a móvil */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+        <div>
+           <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
+           <p className="text-sm text-gray-500 md:hidden font-medium mt-1">{nombreMes} {anioActual}</p>
+        </div>
+        
+        {/* Tarjeta de Tasa: Full width en móvil */}
+        <div className="w-full md:w-auto bg-white px-5 py-3 rounded-xl shadow-sm border border-indigo-100 flex justify-between md:justify-start items-center gap-4 transition-transform active:scale-[0.99]">
+            <div className="flex items-center gap-2">
+                <TrendingUp size={20} className="text-indigo-600"/>
+                <span className="text-sm font-medium text-gray-600">Tasa BCV:</span>
+            </div>
+            <span className="text-xl font-bold text-slate-800">Bs. {(tasa || 0).toFixed(2)}</span>
         </div>
       </div>
 
-      {/* Tarjetas Principales (KPIs Globales) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-4 bg-green-100 rounded-full text-green-600">
-                <Banknote size={32} />
+      {/* Tarjetas Principales (KPIs Globales) - Grid responsive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-green-100 rounded-full text-green-600 flex-shrink-0">
+                <Banknote size={28} />
             </div>
-            <div>
-                <p className="text-sm text-gray-500 font-medium">Recaudado Histórico</p>
-                <h3 className="text-2xl font-bold text-slate-800">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-                <p className="text-sm font-semibold text-green-600">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-green-600 font-medium mt-1">Total acumulado</p>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Recaudado Histórico</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 truncate">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-green-600 truncate">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
         </div>
 
         {/* NUEVA TARJETA: Morosidad */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-red-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-4 bg-red-100 rounded-full text-red-600">
-                <TrendingDown size={32} />
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-red-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-red-100 rounded-full text-red-600 flex-shrink-0">
+                <TrendingDown size={28} />
             </div>
-            <div>
-                <p className="text-sm text-gray-500 font-medium">Morosidad Pendiente</p>
-                <h3 className="text-2xl font-bold text-red-600">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-                <p className="text-sm font-semibold text-red-500">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
-                <p className="text-xs text-gray-400 mt-1">Deuda por cobrar</p>
-            </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-4 bg-yellow-100 rounded-full text-yellow-600">
-                <AlertCircle size={32} />
-            </div>
-            <div>
-                <p className="text-sm text-gray-500 font-medium">Pagos Pendientes</p>
-                <h3 className="text-2xl font-bold text-slate-800">{pagosPendientes}</h3>
-                <p className="text-xs text-gray-400 mt-1">Requieren verificación</p>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Morosidad Global</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-red-600 truncate">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-red-500 truncate">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-4 bg-indigo-100 rounded-full text-indigo-600">
-                <Users size={32} />
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-yellow-100 rounded-full text-yellow-600 flex-shrink-0">
+                <AlertCircle size={28} />
             </div>
-            <div>
-                <p className="text-sm text-gray-500 font-medium">Estudiantes Activos</p>
-                <h3 className="text-2xl font-bold text-slate-800">{totalAlumnos}</h3>
-                <p className="text-xs text-gray-400 mt-1">{reps.length} Familias registradas</p>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Pagos Pendientes</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{pagosPendientes}</h3>
+                <p className="text-xs text-gray-400 mt-1 truncate">Requieren verificación</p>
+            </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-indigo-100 rounded-full text-indigo-600 flex-shrink-0">
+                <Users size={28} />
+            </div>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Estudiantes Activos</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{totalAlumnos}</h3>
+                <p className="text-xs text-gray-400 mt-1 truncate">{reps.length} Familias</p>
             </div>
         </div>
       </div>
       
-      {/* TARJETA IA: Análisis Financiero - SIEMPRE VISIBLE */}
-      <div className="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-5">
-                <Bot size={120} />
+      {/* TARJETA IA: Análisis Financiero - Optimizada Móvil */}
+      <div className="bg-gradient-to-r from-indigo-50 to-white p-5 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                <Bot size={100} />
             </div>
-            <div className="flex flex-col md:flex-row gap-6 relative z-10">
+            <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative z-10">
                 <div className="flex-shrink-0 flex items-start">
-                    <div className="bg-indigo-600 p-3 rounded-lg text-white shadow-lg">
+                    <div className="bg-indigo-600 p-2.5 rounded-lg text-white shadow-lg hidden md:block">
                         <Sparkles size={24} />
                     </div>
+                    {/* Icono visible solo en móvil arriba */}
+                    <div className="flex items-center gap-2 md:hidden mb-1">
+                         <div className="bg-indigo-600 p-1.5 rounded-md text-white shadow">
+                            <Sparkles size={16} />
+                        </div>
+                        <h3 className="text-lg font-bold text-indigo-900">Análisis Inteligente</h3>
+                    </div>
                 </div>
+                
                 <div className="flex-1">
-                    <h3 className="text-lg font-bold text-indigo-900 mb-2">Análisis Financiero Inteligente (Mes Actual)</h3>
+                    <h3 className="text-lg font-bold text-indigo-900 mb-2 hidden md:block">Análisis Financiero Inteligente (Mes Actual)</h3>
                     
                     {!aiSummary && !generatingAI && (
-                        <p className="text-indigo-700/70 text-sm mb-4">
-                            Utilice la inteligencia artificial para analizar el rendimiento de la recaudación de {nombreMes}, tendencias de pago y niveles de morosidad.
+                        <p className="text-indigo-700/80 text-sm mb-4">
+                            Utilice la IA para analizar el rendimiento de {nombreMes}, tendencias y morosidad.
                         </p>
                     )}
 
                     {generatingAI && (
-                        <div className="flex items-center gap-2 text-indigo-600 text-sm py-2">
-                            <Loader2 className="animate-spin" size={16} /> Analizando transacciones y tendencias...
+                        <div className="flex items-center gap-2 text-indigo-600 text-sm py-2 bg-indigo-50/50 rounded-lg px-2">
+                            <Loader2 className="animate-spin" size={16} /> <span className="text-xs font-medium">Analizando datos...</span>
                         </div>
                     )}
 
                     {aiSummary && (
-                        <div className="bg-white/60 p-4 rounded-lg border border-indigo-100 text-sm text-slate-700 leading-relaxed mb-4 animate-in fade-in">
+                        <div className="bg-white/80 p-4 rounded-lg border border-indigo-100 text-sm text-slate-700 leading-relaxed mb-4 shadow-sm">
                             <p className="whitespace-pre-wrap">{aiSummary}</p>
                         </div>
                     )}
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
                         <button 
                             onClick={generarAnalisisIA}
                             disabled={generatingAI || !apiKey}
-                            className={`text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 ${(!apiKey || generatingAI) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`w-full sm:w-auto text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium transition-all shadow-sm flex justify-center items-center gap-2 active:scale-95 ${(!apiKey || generatingAI) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis con IA')}
+                            {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis IA')}
                         </button>
                         
                         {!apiKey && (
-                            <span className="text-xs text-red-500 font-medium bg-red-50 px-2 py-1 rounded border border-red-100">
-                                Sin API Key configurada
+                            <span className="text-xs text-red-500 font-medium bg-red-50 px-2 py-1 rounded border border-red-100 text-center w-full sm:w-auto">
+                                Sin API Key
                             </span>
                         )}
                     </div>
@@ -279,19 +293,20 @@ export const Dashboard: React.FC = () => {
       {/* SECCIÓN: Resumen del Mes Actual */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Tarjeta de Totales del Mes */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-6 border-b pb-2">
             <Calendar className="text-indigo-600" size={20} /> 
-            Resumen Financiero: <span className="capitalize">{nombreMes} {anioActual}</span>
+            <span className="truncate">Resumen: <span className="capitalize">{nombreMes}</span></span>
           </h3>
           
-          <div className="grid grid-cols-2 gap-4">
+          {/* Grilla flexible: 1 columna en móvil, 2 en tablet+ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
              {/* Total USD */}
              <div className="bg-green-50 rounded-xl p-4 border border-green-100 relative overflow-hidden">
-                <div className="absolute right-0 top-0 p-4 opacity-10">
+                <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
                    <DollarSign size={64} className="text-green-800" />
                 </div>
-                <p className="text-sm font-bold text-green-700 uppercase tracking-wide">Total USD ($)</p>
+                <p className="text-xs font-bold text-green-700 uppercase tracking-wide">Total USD ($)</p>
                 <h4 className="text-3xl font-extrabold text-green-800 mt-2">
                   ${totalMesUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </h4>
@@ -302,10 +317,10 @@ export const Dashboard: React.FC = () => {
 
              {/* Total BS */}
              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 relative overflow-hidden">
-                <div className="absolute right-0 top-0 p-4 opacity-10">
+                <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
                    <Wallet size={64} className="text-blue-800" />
                 </div>
-                <p className="text-sm font-bold text-blue-700 uppercase tracking-wide">Total Bolívares</p>
+                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Total Bolívares</p>
                 <h4 className="text-2xl font-extrabold text-blue-800 mt-2 truncate" title={totalMesBs.toFixed(2)}>
                   Bs. {totalMesBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                 </h4>
@@ -317,10 +332,10 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Gráfico Simple: Distribución por Método */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4 border-b pb-2">
             <PieChart className="text-indigo-600" size={20} /> 
-            Ingresos por Método (Este Mes)
+            Ingresos por Método
           </h3>
           
           <div className="space-y-4">
@@ -330,12 +345,12 @@ export const Dashboard: React.FC = () => {
                metodosOrdenados.map(([metodo, monto]) => {
                  const montoNum = Number(monto);
                  const porcentaje = Math.round((montoNum / totalMesUSD) * 100);
-                 const anchoBarra = Math.round((montoNum / maxValChart) * 100); // Relativo al mayor para la barra
+                 const anchoBarra = Math.round((montoNum / maxValChart) * 100); 
                  return (
                    <div key={metodo}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium text-gray-700">{metodo}</span>
-                        <span className="font-bold text-gray-900">${montoNum.toLocaleString()} ({porcentaje}%)</span>
+                        <span className="font-medium text-gray-700 truncate pr-2">{metodo}</span>
+                        <span className="font-bold text-gray-900 whitespace-nowrap">${montoNum.toLocaleString()} ({porcentaje}%)</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-2.5">
                         <div 
@@ -353,30 +368,30 @@ export const Dashboard: React.FC = () => {
 
       {/* Tabla Últimos Movimientos */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-         <div className="p-6 border-b border-gray-100 bg-gray-50">
+         <div className="p-5 border-b border-gray-100 bg-gray-50">
             <h3 className="font-bold text-gray-700 flex items-center gap-2"><Calendar size={20}/> Últimos Movimientos</h3>
          </div>
          <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-gray-500">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-100">
                     <tr>
-                        <th className="px-6 py-3">Fecha</th>
-                        <th className="px-6 py-3">Representante</th>
-                        <th className="px-6 py-3">Método</th>
-                        <th className="px-6 py-3">Ref</th>
-                        <th className="px-6 py-3 text-right">Monto</th>
-                        <th className="px-6 py-3 text-center">Estado</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Fecha</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Representante</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Método</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Ref</th>
+                        <th className="px-6 py-3 text-right whitespace-nowrap">Monto</th>
+                        <th className="px-6 py-3 text-center whitespace-nowrap">Estado</th>
                     </tr>
                 </thead>
                 <tbody>
                     {pagos.slice(-10).reverse().map((p, i) => (
                         <tr key={i} className="bg-white border-b hover:bg-gray-50">
-                            <td className="px-6 py-4">{p.fechaRegistro}</td>
-                            <td className="px-6 py-4 font-medium text-gray-900">{p.nombreRepresentante}</td>
-                            <td className="px-6 py-4">{p.metodoPago}</td>
-                            <td className="px-6 py-4 font-mono text-xs">{p.referencia}</td>
-                            <td className="px-6 py-4 text-right font-bold">${(p.monto || 0).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-center">
+                            <td className="px-6 py-4 whitespace-nowrap">{p.fechaRegistro}</td>
+                            <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{p.nombreRepresentante}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">{p.metodoPago}</td>
+                            <td className="px-6 py-4 font-mono text-xs whitespace-nowrap">{p.referencia}</td>
+                            <td className="px-6 py-4 text-right font-bold whitespace-nowrap">${(p.monto || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`px-2 py-1 rounded-full text-xs ${
                                     p.estado === EstadoPago.VERIFICADO 
                                     ? 'bg-green-100 text-green-800' 
