@@ -295,7 +295,7 @@ export const Pagos: React.FC = () => {
     }
   };
   
-  // --- FUNCIÓN GENERACIÓN RECIBO INDIVIDUAL (Modificada) ---
+  // --- FUNCIÓN GENERACIÓN RECIBO INDIVIDUAL ---
   const generarReciboPDF = async (pagoOverride?: RegistroPago, saldoFinalOverride?: number, saldoAnteriorOverride?: number) => {
     // Usar datos pasados por parámetro (prioridad) o estado actual
     const elPago = pagoOverride || pagoExitoso;
@@ -505,10 +505,9 @@ export const Pagos: React.FC = () => {
       setObservaciones('');
       setSaldoReal(nuevoSaldo);
 
-      // --- GENERAR RECIBO AUTOMÁTICO SI ES SOLVENTE ---
-      if (nuevoSaldo <= 0) {
-        await generarReciboPDF(nuevoPago, nuevoSaldo, saldoReal);
-      }
+      // --- GENERAR RECIBO AUTOMÁTICO SIEMPRE ---
+      // Se genera el recibo independientemente si es Abono o Total
+      await generarReciboPDF(nuevoPago, nuevoSaldo, saldoReal);
       
     } catch (e) {
       console.error(e);
