@@ -126,42 +126,60 @@ export const Reportes: React.FC = () => {
     const resultados: DeudaCalculada[] = reps.map(rep => {
       let deudaEsperadaTotal = 0;
       
-      // Calcular detalle por cada alumno
+      // 1. Inicializar detalle por cada alumno con pagos específicos
       const detallesAlumnos: DetalleAlumnoDeuda[] = rep.alumnos.map(alu => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
         const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
         
         // Costo acumulado hasta la fecha
         const costoTotalAlumno = precioMensual * mesesTranscurridos;
-        
-        // Pagos específicos de este alumno (o pagos generales 'VARIOS' distribuidos proporcionalmente, 
-        // pero para este detalle estricto filtramos por studentId si existe)
-        const pagosAlumno = _pagos.filter(p => 
-          p.cedulaRepresentante === rep.cedula && 
-          p.estado === EstadoPago.VERIFICADO &&
-          p.studentId === alu.id
-        );
-        
-        const totalPagadoAlu = pagosAlumno.reduce((acc, p) => acc + (p.monto || 0), 0);
-        
         deudaEsperadaTotal += costoTotalAlumno;
 
+        // Pagos específicos de este alumno (studentId coincide)
+        const pagosEspecificos = _pagos
+          .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && p.studentId === alu.id)
+          .reduce((acc, p) => acc + (p.monto || 0), 0);
+        
         return {
           nombre: `${alu.nombres} ${alu.apellidos}`,
           nivel: alu.nivel,
           seccion: alu.seccion,
           costo: costoTotalAlumno,
-          pagado: totalPagadoAlu,
-          pendiente: Math.max(0, costoTotalAlumno - totalPagadoAlu)
+          pagado: pagosEspecificos,
+          pendiente: Math.max(0, costoTotalAlumno - pagosEspecificos)
         };
       });
 
-      // Calcular total pagado por el representante (incluyendo pagos "VARIOS")
+      // 2. Obtener Bolsa General de Pagos (Sin studentId o 'VARIOS')
+      let bolsaGeneral = _pagos
+        .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && (!p.studentId || p.studentId === 'VARIOS'))
+        .reduce((acc, p) => acc + (p.monto || 0), 0);
+
+      // 3. Distribuir Bolsa General para cubrir deudas individuales
+      detallesAlumnos.forEach(detalle => {
+         if (bolsaGeneral > 0) {
+             const deudaActual = detalle.pendiente;
+             if (deudaActual > 0) {
+                 const montoACubrir = Math.min(deudaActual, bolsaGeneral);
+                 detalle.pagado += montoACubrir;
+                 detalle.pendiente -= montoACubrir;
+                 bolsaGeneral -= montoACubrir;
+             }
+         }
+      });
+
+      // 4. Si sobra dinero en la bolsa (crédito), asignarlo al primer alumno para visualización
+      if (bolsaGeneral > 0 && detallesAlumnos.length > 0) {
+          detallesAlumnos[0].pagado += bolsaGeneral;
+          // Pendiente se mantiene en 0
+      }
+
+      // Total Pagado Global (Para consistencia)
       const totalPagadoRep = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
-      // El saldo pendiente global es la deuda total de todos los hijos menos todo lo que ha pagado el padre
+      // El saldo pendiente global
       const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
 
       return {
