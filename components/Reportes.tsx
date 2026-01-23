@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, MinusCircle } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo, PagoServicio, RegistroNomina } from '../types';
+import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo, PagoServicio, RegistroNomina, MovimientoInventario, TipoMovimiento } from '../types';
 import { MENSUALIDADES, LOGO_URL } from '../constants';
 
 type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA' | 'BALANCE';
@@ -38,13 +38,14 @@ interface BalanceData {
   egresosServiciosUSD: number;
   egresosServiciosBs: number;
   egresosNominaUSD: number;
-  // La nómina suele ser en base USD, pero si hubiera Bs se sumaría aquí
+  egresosComprasUSD: number; // NUEVO
   totalIngresosUSD: number;
   totalEgresosUSD: number;
   resultadoNetoUSD: number;
   itemsIngresos: RegistroPago[];
   itemsServicios: PagoServicio[];
   itemsNomina: RegistroNomina[];
+  itemsCompras: MovimientoInventario[]; // NUEVO
 }
 
 // Helper
@@ -76,6 +77,7 @@ export const Reportes: React.FC = () => {
   const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
   const [pagosServicios, setPagosServicios] = useState<PagoServicio[]>([]);
   const [historialNomina, setHistorialNomina] = useState<RegistroNomina[]>([]);
+  const [movimientosInventario, setMovimientosInventario] = useState<MovimientoInventario[]>([]);
   
   const [solvencias, setSolvencias] = useState<DeudaCalculada[]>([]);
   const [balance, setBalance] = useState<BalanceData | null>(null);
@@ -112,23 +114,25 @@ export const Reportes: React.FC = () => {
     if (tipoReporte === 'BALANCE' && !loading) {
       calcularBalance();
     }
-  }, [fechaInicio, fechaFin, pagos, pagosServicios, historialNomina, tipoReporte]);
+  }, [fechaInicio, fechaFin, pagos, pagosServicios, historialNomina, movimientosInventario, tipoReporte]);
 
   const cargarDatosGenerales = async () => {
     setLoading(true);
     try {
-      const [pData, rData, nData, sData, nomData] = await Promise.all([
+      const [pData, rData, nData, sData, nomData, invData] = await Promise.all([
         db.getPagos(),
         db.getRepresentantes(),
         db.getNiveles(),
         db.getPagosServicios(),
-        db.getNominaHistory()
+        db.getNominaHistory(),
+        db.getInventarioData()
       ]);
       setPagos(pData);
       setRepresentantes(rData);
       setNivelesConfig(nData);
       setPagosServicios(sData);
       setHistorialNomina(nomData);
+      setMovimientosInventario(invData.movimientos);
       
       // Calcular solvencias una vez cargados los datos
       calcularSolvencias(rData, pData, nData);
@@ -257,8 +261,17 @@ export const Reportes: React.FC = () => {
 
     const totalNominaUSD = nominaFiltrada.reduce((acc, n) => acc + (n.totalPagar || 0), 0);
 
+    // 4. Filtrar Egresos (Compras Inventario)
+    const comprasFiltradas = movimientosInventario.filter(m => {
+        return m.tipo === TipoMovimiento.ENTRADA &&
+               m.fecha >= fechaInicio &&
+               m.fecha <= fechaFin;
+    });
+
+    const totalComprasUSD = comprasFiltradas.reduce((acc, m) => acc + (m.costoTotal || 0), 0);
+
     // Totales
-    const totalEgresosUSD = totalServiciosUSD + totalNominaUSD;
+    const totalEgresosUSD = totalServiciosUSD + totalNominaUSD + totalComprasUSD;
     const resultadoNeto = totalIngresosUSD - totalEgresosUSD;
 
     setBalance({
@@ -267,12 +280,14 @@ export const Reportes: React.FC = () => {
       egresosServiciosUSD: totalServiciosUSD,
       egresosServiciosBs: totalServiciosBs,
       egresosNominaUSD: totalNominaUSD,
+      egresosComprasUSD: totalComprasUSD, // NUEVO
       totalIngresosUSD: totalIngresosUSD,
       totalEgresosUSD: totalEgresosUSD,
       resultadoNetoUSD: resultadoNeto,
       itemsIngresos: ingresosFiltrados,
       itemsServicios: serviciosFiltrados,
-      itemsNomina: nominaFiltrada
+      itemsNomina: nominaFiltrada,
+      itemsCompras: comprasFiltradas // NUEVO
     });
   };
 
@@ -378,7 +393,7 @@ export const Reportes: React.FC = () => {
 
         const resumenData = [
           ['INGRESOS TOTALES (+)', `$${balance.totalIngresosUSD.toFixed(2)}`, `Bs. ${balance.ingresosBs.toFixed(2)}`],
-          ['EGRESOS TOTALES (-)', `$${balance.totalEgresosUSD.toFixed(2)}`, `(Servicios + Nómina)`],
+          ['EGRESOS TOTALES (-)', `$${balance.totalEgresosUSD.toFixed(2)}`, `(Servicios + Nómina + Compras)`],
           ['RESULTADO NETO (=)', `$${balance.resultadoNetoUSD.toFixed(2)}`, balance.resultadoNetoUSD >= 0 ? 'SUPERÁVIT' : 'DÉFICIT']
         ];
 
@@ -418,7 +433,6 @@ export const Reportes: React.FC = () => {
 
         // 3. DETALLE EGRESOS (SERVICIOS)
         finalY = (doc as any).lastAutoTable.finalY + 15;
-        // Salto de página si es necesario
         if (finalY > 250) { doc.addPage(); finalY = 20; }
         
         doc.text("Detalle de Egresos Operativos (Servicios)", 14, finalY);
@@ -442,7 +456,7 @@ export const Reportes: React.FC = () => {
         } else {
             doc.setFontSize(10);
             doc.text("No hay pagos de servicios en este periodo.", 14, finalY + 10);
-            (doc as any).lastAutoTable = { finalY: finalY + 15 }; // Mock para continuar
+            (doc as any).lastAutoTable = { finalY: finalY + 15 };
         }
 
         // 4. DETALLE EGRESOS (NÓMINA)
@@ -471,6 +485,35 @@ export const Reportes: React.FC = () => {
         } else {
            doc.setFontSize(10);
            doc.text("No hay pagos de nómina en este periodo.", 14, finalY + 10);
+           (doc as any).lastAutoTable = { finalY: finalY + 15 };
+        }
+
+        // 5. DETALLE EGRESOS (COMPRAS/INVENTARIO) - NUEVO
+        finalY = (doc as any).lastAutoTable.finalY + 15;
+        if (finalY > 250) { doc.addPage(); finalY = 20; }
+
+        doc.setFontSize(14);
+        doc.text("Detalle de Compras / Inventario", 14, finalY);
+
+        const tablaCompras = balance.itemsCompras.map(c => [
+          c.fecha,
+          c.nombreArticulo,
+          c.solicitanteOProveedor,
+          `$${(c.costoTotal || 0).toFixed(2)}`
+        ]);
+
+        if (tablaCompras.length > 0) {
+          autoTable(doc, {
+            startY: finalY + 5,
+            head: [['Fecha', 'Artículo', 'Proveedor', 'Costo']],
+            body: tablaCompras,
+            theme: 'striped',
+            styles: { fontSize: 8 },
+            foot: [['TOTAL COMPRAS', '', '', `$${balance.egresosComprasUSD.toFixed(2)}`]]
+          });
+        } else {
+           doc.setFontSize(10);
+           doc.text("No hay compras registradas en este periodo.", 14, finalY + 10);
         }
 
         doc.save(`Balance_Financiero_${fechaInicio}_${fechaFin}.pdf`);
@@ -569,7 +612,7 @@ export const Reportes: React.FC = () => {
       if (tipoReporte === 'BALANCE' && balance) {
          prompt = `Analiza este Balance Financiero Escolar del periodo ${fechaInicio} al ${fechaFin}:
          Ingresos Totales: $${balance.totalIngresosUSD} (Bs. ${balance.ingresosBs})
-         Egresos Totales: $${balance.totalEgresosUSD} (Servicios: $${balance.egresosServiciosUSD}, Nómina: $${balance.egresosNominaUSD})
+         Egresos Totales: $${balance.totalEgresosUSD} (Servicios: $${balance.egresosServiciosUSD}, Nómina: $${balance.egresosNominaUSD}, Compras Inventario: $${balance.egresosComprasUSD})
          Resultado Neto: $${balance.resultadoNetoUSD}
          
          Dame 3 puntos clave sobre la salud financiera y 1 recomendación breve.`;
@@ -750,6 +793,7 @@ export const Reportes: React.FC = () => {
                  <div className="mt-2 text-xs text-red-800 space-y-1">
                      <div className="flex justify-between"><span>Servicios:</span> <span>${balance.egresosServiciosUSD.toFixed(2)}</span></div>
                      <div className="flex justify-between"><span>Nómina:</span> <span>${balance.egresosNominaUSD.toFixed(2)}</span></div>
+                     <div className="flex justify-between font-bold border-t border-red-200 pt-1"><span>Compras Inv:</span> <span>${balance.egresosComprasUSD.toFixed(2)}</span></div>
                  </div>
              </div>
 

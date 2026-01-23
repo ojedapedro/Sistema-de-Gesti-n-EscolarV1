@@ -165,7 +165,8 @@ function doGet(e) {
             cantidad: Number(r[6]),
             solicitanteOProveedor: String(r[7]),
             motivo: String(r[8]),
-            usuarioRegistra: String(r[9])
+            usuarioRegistra: String(r[9]),
+            costoTotal: Number(r[10] || 0) // NUEVO: Costo Total
          }));
       }
 
@@ -446,7 +447,7 @@ function doPost(e) {
     }
 
     if (action === 'saveMovimiento') {
-      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
+      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal']);
       sheet.appendRow([
         data.id, 
         data.fecha, 
@@ -457,7 +458,8 @@ function doPost(e) {
         data.cantidad, 
         data.solicitanteOProveedor, 
         data.motivo, 
-        data.usuarioRegistra
+        data.usuarioRegistra,
+        data.costoTotal || 0 // NUEVO: Guardar costo
       ]);
       return success('Movimiento registrado');
     }
@@ -584,7 +586,7 @@ function setup() {
   ]);
   getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
   getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
-  getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
+  getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal']);
   getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);
   getOrCreateSheet(ss, 'PayrollHistory', [
     'ID', 'EmpleadoID', 'Nombre', 'Cedula', 'Cargo', 'Periodo', 'FechaPago', 

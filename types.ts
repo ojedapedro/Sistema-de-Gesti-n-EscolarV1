@@ -150,6 +150,7 @@ export interface MovimientoInventario {
   solicitanteOProveedor: string; // Quien pide (salida) o Proveedor (entrada)
   motivo: string; // "Limpieza General", "Dotación Inicio Año", etc.
   usuarioRegistra: string; // Usuario del sistema
+  costoTotal?: number; // NUEVO: Costo en USD de la compra
 }
 
 // --- TIPOS DE NÓMINA ---
@@ -209,7 +210,7 @@ export interface RegistroNomina {
 // --- TIPOS DE PAGOS DE SERVICIOS ---
 
 export enum CategoriaServicio {
-  IMPUESTO_NACIONAL = 'Impuestos Nacionales (SENIAT)',
+  IMPUESTO_NACIONAL = 'Impuestos Nacionales (ISLR, SENIAT)',
   IMPUESTO_MUNICIPAL = 'Impuestos Municipales',
   SERVICIOS_BASICOS = 'Servicios Básicos (Agua, Luz)',
   TELECOMUNICACIONES = 'Telecomunicaciones (Internet, Tlf)',

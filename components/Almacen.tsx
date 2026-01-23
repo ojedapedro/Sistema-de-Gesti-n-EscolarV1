@@ -140,7 +140,9 @@ export const Almacen: React.FC = () => {
             cantidad: Number(movimientoForm.cantidad),
             solicitanteOProveedor: movimientoForm.solicitanteOProveedor,
             motivo: movimientoForm.motivo,
-            usuarioRegistra: user?.nombre || 'Admin'
+            usuarioRegistra: user?.nombre || 'Admin',
+            // Si es salida, costo 0, si es entrada, el valor del form o 0
+            costoTotal: tipo === TipoMovimiento.ENTRADA ? Number(movimientoForm.costoTotal || 0) : 0
         };
 
         await db.saveMovimiento(nuevoMov);
@@ -432,9 +434,13 @@ export const Almacen: React.FC = () => {
                            <input type="number" min="1" className="w-full border p-2 rounded font-bold" value={movimientoForm.cantidad || ''} onChange={e => setMovimientoForm({...movimientoForm, cantidad: Number(e.target.value)})} />
                        </div>
                        <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor / Tienda</label>
-                           <input type="text" className="w-full border p-2 rounded" placeholder="Ej: Office Depot" value={movimientoForm.solicitanteOProveedor || ''} onChange={e => setMovimientoForm({...movimientoForm, solicitanteOProveedor: e.target.value})} />
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Costo Total ($) <span className="text-gray-400 font-normal">(Opcional)</span></label>
+                           <input type="number" min="0" className="w-full border p-2 rounded font-bold" placeholder="0.00" value={movimientoForm.costoTotal || ''} onChange={e => setMovimientoForm({...movimientoForm, costoTotal: Number(e.target.value)})} />
                        </div>
+                   </div>
+                   <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor / Tienda</label>
+                       <input type="text" className="w-full border p-2 rounded" placeholder="Ej: Office Depot" value={movimientoForm.solicitanteOProveedor || ''} onChange={e => setMovimientoForm({...movimientoForm, solicitanteOProveedor: e.target.value})} />
                    </div>
                    <div>
                        <label className="block text-sm font-medium text-gray-700 mb-1">Motivo / Factura Ref.</label>
@@ -561,6 +567,7 @@ export const Almacen: React.FC = () => {
                                <th className="px-6 py-3">Tipo</th>
                                <th className="px-6 py-3">Artículo</th>
                                <th className="px-6 py-3 text-right">Cant.</th>
+                               <th className="px-6 py-3 text-right">Costo ($)</th>
                                <th className="px-6 py-3">Responsable / Prov.</th>
                                <th className="px-6 py-3">Motivo</th>
                                <th className="px-6 py-3">Usuario Reg.</th>
@@ -577,6 +584,9 @@ export const Almacen: React.FC = () => {
                                    </td>
                                    <td className="px-6 py-4 font-medium">{mov.nombreArticulo}</td>
                                    <td className="px-6 py-4 text-right font-mono text-gray-800 font-bold">{mov.cantidad}</td>
+                                   <td className="px-6 py-4 text-right font-mono text-gray-800">
+                                       {mov.costoTotal ? `$${mov.costoTotal}` : '-'}
+                                   </td>
                                    <td className="px-6 py-4">{mov.solicitanteOProveedor}</td>
                                    <td className="px-6 py-4 text-xs">{mov.motivo}</td>
                                    <td className="px-6 py-4 text-xs text-gray-400">{mov.usuarioRegistra}</td>
@@ -584,7 +594,7 @@ export const Almacen: React.FC = () => {
                            ))}
                            {movimientosFiltrados.length === 0 && (
                                <tr>
-                                   <td colSpan={7} className="text-center py-8 text-gray-400">
+                                   <td colSpan={8} className="text-center py-8 text-gray-400">
                                        No se encontraron movimientos con los filtros seleccionados.
                                    </td>
                                </tr>
