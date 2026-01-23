@@ -139,16 +139,17 @@ export const Dashboard: React.FC = () => {
         const ai = new GoogleGenAI({ apiKey: apiKey });
         
         const prompt = `
-            Analiza el cierre administrativo de ${nombreMes} ${anioActual} con estos indicadores clave:
+            Actúa como un Gerente Financiero Escolar experto. Analiza el cierre administrativo de ${nombreMes} ${anioActual} con los siguientes datos reales:
 
-            1. FLUJO DE CAJA: $${totalMesUSD.toFixed(2)} recaudados (${pagosDelMes.length} ops).
-            2. CUENTAS POR COBRAR (Morosidad Global): $${totalMorosidad.toFixed(2)}.
-            3. CARGA OPERATIVA: ${pagosPendientes} pagos en cola de verificación.
-            4. TENDENCIA PAGO: Mayoría paga vía ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'N/A'}.
+            1. **Flujo de Caja Mensual:** $${totalMesUSD.toFixed(2)} recaudados (en ${pagosDelMes.length} transacciones).
+            2. **Cartera de Deuda Total:** $${totalMorosidad.toFixed(2)} (Morosidad acumulada).
+            3. **Eficiencia Operativa:** ${pagosPendientes} pagos en cola esperando verificación manual.
+            4. **Preferencia de Pago:** El método principal es ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'N/A'}.
 
-            Genera un reporte directivo ultra-conciso (Máximo 50 palabras) con este formato estricto:
-            **Diagnóstico:** [1 frase evaluando la salud financiera actual (Crítica/Estable/Óptima) comparando ingresos vs deuda].
-            **Acción Clave:** [1 recomendación administrativa específica: ej. "Priorizar verificación de cola", "Activar cobranza telefónica agresiva", "Incentivar pronto pago"].
+            Genera un reporte estratégico detallado (máximo 100 palabras) con la siguiente estructura:
+            **📊 Balance Ingreso vs Deuda:** Evalúa la salud financiera comparando lo recaudado este mes frente a la deuda total acumulada. ¿Es sostenible la brecha?
+            **📢 Acción de Cobranza:** Recomienda una estrategia táctica específica (ej: "Campaña masiva por WhatsApp", "Suspensión de servicios", "Plan de financiamiento") para reducir la morosidad, considerando el método de pago preferido.
+            **⚡ Recomendación Operativa:** Una acción breve sobre la gestión de la cola de verificación.
         `;
 
         const response = await ai.models.generateContent({
@@ -255,7 +256,7 @@ export const Dashboard: React.FC = () => {
                     
                     {!aiSummary && !generatingAI && (
                         <p className="text-indigo-700/80 text-sm mb-4">
-                            Utilice la IA para analizar el rendimiento de {nombreMes}, tendencias y morosidad.
+                            Utilice la IA para analizar el rendimiento de {nombreMes}, tendencias y obtener estrategias de cobranza.
                         </p>
                     )}
 
