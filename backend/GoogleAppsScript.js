@@ -192,6 +192,31 @@ function doGet(e) {
          }));
        }
     }
+    else if (action === 'getNominaHistory') {
+       const sheet = ss.getSheetByName('PayrollHistory');
+       if (!sheet) result = [];
+       else {
+         const rows = sheet.getDataRange().getValues();
+         rows.shift();
+         result = rows.map(r => ({
+           id: String(r[0]),
+           empleadoId: String(r[1]),
+           nombreCompleto: String(r[2]),
+           cedula: String(r[3]),
+           cargo: String(r[4]),
+           periodo: String(r[5]),
+           fechaPago: formatDateStr(r[6]),
+           sueldoBase: Number(r[7] || 0),
+           bono: Number(r[8] || 0),
+           asignacionesExtra: Number(r[9] || 0),
+           deduccionSSO: Number(r[10] || 0),
+           deduccionSPF: Number(r[11] || 0),
+           deduccionFAOV: Number(r[12] || 0),
+           otrasDeducciones: Number(r[13] || 0),
+           totalPagar: Number(r[14] || 0)
+         }));
+       }
+    }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -435,6 +460,38 @@ function doPost(e) {
       return success('Empleado guardado');
     }
 
+    if (action === 'saveNominaBatch') {
+      let sheet = getOrCreateSheet(ss, 'PayrollHistory', [
+          'ID', 'EmpleadoID', 'Nombre', 'Cedula', 'Cargo', 'Periodo', 'FechaPago', 
+          'SueldoBase', 'Bono', 'Extra', 'DeduccionSSO', 'DeduccionSPF', 'DeduccionFAOV', 'OtrasDeducciones', 'Total'
+      ]);
+      
+      if (!Array.isArray(data)) return errorResponse("Data debe ser un array");
+
+      // Usar appendRow para cada item (podría optimizarse con setValues en rango para grandes volúmenes, pero appendRow es más seguro por fila)
+      data.forEach(item => {
+        sheet.appendRow([
+          item.id,
+          item.empleadoId,
+          item.nombreCompleto,
+          item.cedula,
+          item.cargo,
+          item.periodo,
+          item.fechaPago,
+          item.sueldoBase,
+          item.bono,
+          item.asignacionesExtra,
+          item.deduccionSSO,
+          item.deduccionSPF,
+          item.deduccionFAOV,
+          item.otrasDeducciones,
+          item.totalPagar
+        ]);
+      });
+
+      return success('Nómina guardada');
+    }
+
     return errorResponse("Accion desconocida");
 
   } catch (e) {
@@ -491,4 +548,8 @@ function setup() {
   getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
   getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
   getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);
+  getOrCreateSheet(ss, 'PayrollHistory', [
+    'ID', 'EmpleadoID', 'Nombre', 'Cedula', 'Cargo', 'Periodo', 'FechaPago', 
+    'SueldoBase', 'Bono', 'Extra', 'DeduccionSSO', 'DeduccionSPF', 'DeduccionFAOV', 'OtrasDeducciones', 'Total'
+  ]);
 }
