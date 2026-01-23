@@ -150,7 +150,8 @@ export interface MovimientoInventario {
   solicitanteOProveedor: string; // Quien pide (salida) o Proveedor (entrada)
   motivo: string; // "Limpieza General", "Dotación Inicio Año", etc.
   usuarioRegistra: string; // Usuario del sistema
-  costoTotal?: number; // NUEVO: Costo en USD de la compra
+  costoTotal?: number; // Costo Total de la linea
+  precioUnitario?: number; // NUEVO: Precio por unidad
 }
 
 // --- TIPOS DE NÓMINA ---

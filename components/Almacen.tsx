@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { ArticuloInventario, MovimientoInventario, CategoriaInsumo, TipoMovimiento } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter, X, Printer, CheckCircle, FileText } from 'lucide-react';
+import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter, X, Printer, CheckCircle, FileText, Trash2, Save } from 'lucide-react';
 import autoTable from 'jspdf-autotable';
 import { jsPDF } from 'jspdf';
 import { LOGO_URL } from '../constants';
@@ -26,6 +26,16 @@ const loadImage = (url: string): Promise<string | null> => {
   });
 };
 
+interface CartItem {
+    id: string; // Temp ID
+    articuloId: string;
+    nombreArticulo: string;
+    categoria: CategoriaInsumo;
+    cantidad: number;
+    precioUnitario: number;
+    subtotal: number;
+}
+
 export const Almacen: React.FC = () => {
   const { user } = useAuth();
   
@@ -47,10 +57,25 @@ export const Almacen: React.FC = () => {
   const [nuevoArticulo, setNuevoArticulo] = useState<Partial<ArticuloInventario>>({});
   const [mostrarFormArticulo, setMostrarFormArticulo] = useState(false);
 
-  // Formulario Movimiento
+  // Formulario Movimiento Simple (Para Salidas)
   const [movimientoForm, setMovimientoForm] = useState<Partial<MovimientoInventario>>({
     fecha: new Date().toISOString().split('T')[0]
   });
+
+  // --- LOGICA CARRITO COMPRAS (FACTURA) ---
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [invoiceHeader, setInvoiceHeader] = useState({
+      fecha: new Date().toISOString().split('T')[0],
+      proveedor: '',
+      referencia: ''
+  });
+  const [currentItem, setCurrentItem] = useState<{articuloId: string, cantidad: string, precio: string}>({
+      articuloId: '',
+      cantidad: '',
+      precio: ''
+  });
+  const [aplicarIva, setAplicarIva] = useState(false);
+  const IVA_RATE = 0.16;
 
   // Estado para el Modal de Verificación de Salida
   const [showReciboSalida, setShowReciboSalida] = useState(false);
@@ -111,52 +136,115 @@ export const Almacen: React.FC = () => {
     }
   };
 
-  const procesarMovimiento = async (tipo: TipoMovimiento) => {
+  // --- LOGICA DE CARRITO (COMPRAS) ---
+  const agregarItemAlCarrito = () => {
+      if(!currentItem.articuloId || !currentItem.cantidad || !currentItem.precio) {
+          alert("Seleccione un artículo, cantidad y precio."); return;
+      }
+      const cant = parseFloat(currentItem.cantidad);
+      const prec = parseFloat(currentItem.precio);
+      if(isNaN(cant) || cant <= 0) { alert("Cantidad inválida"); return; }
+      if(isNaN(prec) || prec < 0) { alert("Precio inválido"); return; }
+
+      const art = articulos.find(a => a.id === currentItem.articuloId);
+      if(!art) return;
+
+      const newItem: CartItem = {
+          id: crypto.randomUUID(),
+          articuloId: art.id,
+          nombreArticulo: art.nombre,
+          categoria: art.categoria,
+          cantidad: cant,
+          precioUnitario: prec,
+          subtotal: cant * prec
+      };
+
+      setCart([...cart, newItem]);
+      setCurrentItem({ articuloId: '', cantidad: '', precio: '' }); // Reset item inputs
+  };
+
+  const removerItemCarrito = (id: string) => {
+      setCart(cart.filter(item => item.id !== id));
+  };
+
+  const guardarFacturaCompra = async () => {
+      if(cart.length === 0) { alert("El carrito está vacío"); return; }
+      if(!invoiceHeader.proveedor || !invoiceHeader.referencia) { alert("Indique proveedor y número de factura/referencia"); return; }
+
+      setLoading(true);
+      try {
+          const movimientosBatch: MovimientoInventario[] = cart.map(item => {
+              // Calcular IVA proporcional si aplica
+              const itemTotal = aplicarIva ? item.subtotal * (1 + IVA_RATE) : item.subtotal;
+              
+              return {
+                  id: crypto.randomUUID(),
+                  fecha: invoiceHeader.fecha,
+                  articuloId: item.articuloId,
+                  nombreArticulo: item.nombreArticulo,
+                  categoria: item.categoria,
+                  tipo: TipoMovimiento.ENTRADA,
+                  cantidad: item.cantidad,
+                  solicitanteOProveedor: invoiceHeader.proveedor,
+                  motivo: `Factura ${invoiceHeader.referencia}`, // Agrupar por Ref
+                  usuarioRegistra: user?.nombre || 'Admin',
+                  costoTotal: parseFloat(itemTotal.toFixed(2)),
+                  precioUnitario: item.precioUnitario
+              };
+          });
+
+          await db.saveMovimientoBatch(movimientosBatch);
+          
+          alert("Factura cargada correctamente. Inventario actualizado.");
+          setCart([]);
+          setInvoiceHeader({ ...invoiceHeader, proveedor: '', referencia: '' });
+          await cargarInventario();
+          setView('INVENTARIO');
+
+      } catch(e) {
+          console.error(e);
+          alert("Error guardando la factura.");
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // --- LOGICA DE SALIDAS (REQUISICION) ---
+  const procesarSalida = async () => {
     if (!movimientoForm.articuloId || !movimientoForm.cantidad || !movimientoForm.solicitanteOProveedor || !movimientoForm.motivo) {
         alert("Todos los campos son obligatorios.");
         return;
     }
 
-    // Validar Stock para Salidas
-    if (tipo === TipoMovimiento.SALIDA) {
-        const art = articulos.find(a => a.id === movimientoForm.articuloId);
-        if (art && (art.stockCalculado || 0) < Number(movimientoForm.cantidad)) {
-            alert(`Stock insuficiente. Disponible: ${art.stockCalculado}`);
-            return;
-        }
+    const art = articulos.find(a => a.id === movimientoForm.articuloId);
+    if (art && (art.stockCalculado || 0) < Number(movimientoForm.cantidad)) {
+        alert(`Stock insuficiente. Disponible: ${art.stockCalculado}`);
+        return;
     }
 
     setLoading(true);
     try {
-        const artSeleccionado = articulos.find(a => a.id === movimientoForm.articuloId);
-        
         const nuevoMov: MovimientoInventario = {
             id: crypto.randomUUID(),
             fecha: movimientoForm.fecha || new Date().toISOString().split('T')[0],
-            articuloId: movimientoForm.articuloId,
-            nombreArticulo: artSeleccionado?.nombre || 'Desconocido',
-            categoria: artSeleccionado?.categoria || CategoriaInsumo.OTROS,
-            tipo: tipo,
+            articuloId: movimientoForm.articuloId!,
+            nombreArticulo: art?.nombre || 'Desconocido',
+            categoria: art?.categoria || CategoriaInsumo.OTROS,
+            tipo: TipoMovimiento.SALIDA,
             cantidad: Number(movimientoForm.cantidad),
-            solicitanteOProveedor: movimientoForm.solicitanteOProveedor,
-            motivo: movimientoForm.motivo,
+            solicitanteOProveedor: movimientoForm.solicitanteOProveedor!,
+            motivo: movimientoForm.motivo!,
             usuarioRegistra: user?.nombre || 'Admin',
-            // Si es salida, costo 0, si es entrada, el valor del form o 0
-            costoTotal: tipo === TipoMovimiento.ENTRADA ? Number(movimientoForm.costoTotal || 0) : 0
+            costoTotal: 0,
+            precioUnitario: 0
         };
 
         await db.saveMovimiento(nuevoMov);
-        setMovimientoForm({ fecha: new Date().toISOString().split('T')[0] }); // Reset parcial
+        setMovimientoForm({ fecha: new Date().toISOString().split('T')[0] }); 
         await cargarInventario();
 
-        if (tipo === TipoMovimiento.SALIDA) {
-            // Abrir Modal de Verificación e Impresión
-            setUltimoMovimiento(nuevoMov);
-            setShowReciboSalida(true);
-        } else {
-            alert("Entrada de almacén registrada con éxito.");
-            setView('INVENTARIO');
-        }
+        setUltimoMovimiento(nuevoMov);
+        setShowReciboSalida(true);
 
     } catch(e) {
         console.error(e);
@@ -281,6 +369,11 @@ export const Almacen: React.FC = () => {
       return matchProd && matchFecha;
   });
 
+  // Cálculos de Totales del Carrito
+  const subtotalCarrito = cart.reduce((acc, item) => acc + item.subtotal, 0);
+  const montoIVA = aplicarIva ? subtotalCarrito * IVA_RATE : 0;
+  const totalFactura = subtotalCarrito + montoIVA;
+
   // --- UI RENDER ---
 
   if(loading && articulos.length === 0) return <div className="flex justify-center p-12 text-indigo-600">Cargando inventario...</div>;
@@ -402,57 +495,154 @@ export const Almacen: React.FC = () => {
            </div>
        )}
 
-       {/* VIEW: COMPRAS (ENTRADAS) */}
+       {/* VIEW: COMPRAS (ENTRADAS MULTIPLES - FACTURA) */}
        {view === 'COMPRA' && (
-           <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                <h3 className="text-xl font-bold text-green-700 mb-6 flex items-center gap-2">
-                   <ShoppingCart /> Registrar Compra / Entrada de Almacén
+                   <ShoppingCart /> Carga de Factura de Compra
                </h3>
                
-               <div className="space-y-4">
+               {/* 1. Cabecera de Factura */}
+               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                    <div>
-                       <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-                       <input type="date" className="w-full border p-2 rounded" value={movimientoForm.fecha} onChange={e => setMovimientoForm({...movimientoForm, fecha: e.target.value})} />
+                       <label className="block text-xs font-bold text-gray-500 mb-1">Fecha Factura</label>
+                       <input 
+                           type="date" 
+                           className="w-full border p-2 rounded text-sm" 
+                           value={invoiceHeader.fecha} 
+                           onChange={e => setInvoiceHeader({...invoiceHeader, fecha: e.target.value})} 
+                       />
                    </div>
                    <div>
-                       <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar Artículo</label>
-                       <select 
-                         className="w-full border p-2 rounded"
-                         value={movimientoForm.articuloId || ''}
-                         onChange={e => setMovimientoForm({...movimientoForm, articuloId: e.target.value})}
+                       <label className="block text-xs font-bold text-gray-500 mb-1">Proveedor</label>
+                       <input 
+                           type="text" 
+                           className="w-full border p-2 rounded text-sm" 
+                           placeholder="Ej: Office Depot" 
+                           value={invoiceHeader.proveedor} 
+                           onChange={e => setInvoiceHeader({...invoiceHeader, proveedor: e.target.value})} 
+                       />
+                   </div>
+                   <div>
+                       <label className="block text-xs font-bold text-gray-500 mb-1">Nro. Factura / Referencia</label>
+                       <input 
+                           type="text" 
+                           className="w-full border p-2 rounded text-sm" 
+                           placeholder="Ej: FAC-00123" 
+                           value={invoiceHeader.referencia} 
+                           onChange={e => setInvoiceHeader({...invoiceHeader, referencia: e.target.value})} 
+                       />
+                   </div>
+               </div>
+
+               {/* 2. Formulario Agregar Item */}
+               <div className="border-b border-gray-200 pb-6 mb-6">
+                   <h4 className="font-bold text-gray-700 mb-3 text-sm">Agregar Artículos</h4>
+                   <div className="flex flex-wrap gap-4 items-end">
+                       <div className="flex-1 min-w-[200px]">
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Artículo</label>
+                           <select 
+                               className="w-full border p-2 rounded text-sm"
+                               value={currentItem.articuloId}
+                               onChange={e => setCurrentItem({...currentItem, articuloId: e.target.value})}
+                           >
+                               <option value="">-- Seleccione --</option>
+                               {articulos.map(a => (
+                                   <option key={a.id} value={a.id}>{a.nombre} ({a.unidadMedida})</option>
+                               ))}
+                           </select>
+                       </div>
+                       <div className="w-24">
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Cantidad</label>
+                           <input 
+                               type="number" 
+                               min="1" 
+                               className="w-full border p-2 rounded text-sm text-center" 
+                               value={currentItem.cantidad} 
+                               onChange={e => setCurrentItem({...currentItem, cantidad: e.target.value})} 
+                           />
+                       </div>
+                       <div className="w-32">
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Precio Unit. ($)</label>
+                           <input 
+                               type="number" 
+                               min="0" 
+                               className="w-full border p-2 rounded text-sm text-right" 
+                               placeholder="0.00"
+                               value={currentItem.precio} 
+                               onChange={e => setCurrentItem({...currentItem, precio: e.target.value})} 
+                           />
+                       </div>
+                       <button 
+                           onClick={agregarItemAlCarrito}
+                           className="bg-slate-800 text-white px-4 py-2 rounded text-sm font-bold hover:bg-slate-700 flex items-center gap-1 h-[38px]"
                        >
-                           <option value="">-- Seleccione Insumo --</option>
-                           {articulos.map(a => (
-                               <option key={a.id} value={a.id}>{a.nombre} ({a.categoria})</option>
+                           <Plus size={16}/> Agregar
+                       </button>
+                   </div>
+                   <p className="text-xs text-gray-400 mt-2">
+                       ¿No aparece el artículo? <button onClick={() => setView('INVENTARIO')} className="text-indigo-600 underline">Créalo en Inventario</button> primero.
+                   </p>
+               </div>
+
+               {/* 3. Tabla Carrito */}
+               <div className="mb-6">
+                   <table className="w-full text-sm text-left">
+                       <thead className="bg-gray-100 text-xs uppercase font-bold text-gray-600">
+                           <tr>
+                               <th className="px-4 py-2">Artículo</th>
+                               <th className="px-4 py-2 text-center">Cant.</th>
+                               <th className="px-4 py-2 text-right">Precio Unit.</th>
+                               <th className="px-4 py-2 text-right">Subtotal</th>
+                               <th className="px-4 py-2 text-center"></th>
+                           </tr>
+                       </thead>
+                       <tbody className="divide-y">
+                           {cart.map(item => (
+                               <tr key={item.id} className="hover:bg-gray-50">
+                                   <td className="px-4 py-2">{item.nombreArticulo}</td>
+                                   <td className="px-4 py-2 text-center">{item.cantidad}</td>
+                                   <td className="px-4 py-2 text-right">${item.precioUnitario.toFixed(2)}</td>
+                                   <td className="px-4 py-2 text-right font-bold">${item.subtotal.toFixed(2)}</td>
+                                   <td className="px-4 py-2 text-center">
+                                       <button onClick={() => removerItemCarrito(item.id)} className="text-red-500 hover:text-red-700">
+                                           <Trash2 size={16} />
+                                       </button>
+                                   </td>
+                               </tr>
                            ))}
-                       </select>
-                       <p className="text-xs text-gray-500 mt-1">¿No aparece el artículo? <button onClick={() => setView('INVENTARIO')} className="text-indigo-600 underline">Cree la definición en Inventario primero</button>.</p>
+                           {cart.length === 0 && (
+                               <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 italic">No hay artículos agregados a la factura.</td></tr>
+                           )}
+                       </tbody>
+                   </table>
+               </div>
+
+               {/* 4. Totales y Guardar */}
+               <div className="flex flex-col items-end gap-2 border-t pt-4">
+                   <div className="flex justify-between w-full md:w-1/3 text-sm">
+                       <span className="text-gray-600">Subtotal:</span>
+                       <span className="font-bold">${subtotalCarrito.toFixed(2)}</span>
                    </div>
-                   <div className="grid grid-cols-2 gap-4">
-                       <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad (Entrada)</label>
-                           <input type="number" min="1" className="w-full border p-2 rounded font-bold" value={movimientoForm.cantidad || ''} onChange={e => setMovimientoForm({...movimientoForm, cantidad: Number(e.target.value)})} />
-                       </div>
-                       <div>
-                           <label className="block text-sm font-medium text-gray-700 mb-1">Costo Total ($) <span className="text-gray-400 font-normal">(Opcional)</span></label>
-                           <input type="number" min="0" className="w-full border p-2 rounded font-bold" placeholder="0.00" value={movimientoForm.costoTotal || ''} onChange={e => setMovimientoForm({...movimientoForm, costoTotal: Number(e.target.value)})} />
-                       </div>
+                   <div className="flex justify-between w-full md:w-1/3 text-sm items-center">
+                       <label className="flex items-center gap-2 cursor-pointer select-none">
+                           <input type="checkbox" checked={aplicarIva} onChange={e => setAplicarIva(e.target.checked)} className="rounded text-indigo-600"/>
+                           <span className="text-gray-600">IVA ({IVA_RATE * 100}%):</span>
+                       </label>
+                       <span className="font-bold">${montoIVA.toFixed(2)}</span>
                    </div>
-                   <div>
-                       <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor / Tienda</label>
-                       <input type="text" className="w-full border p-2 rounded" placeholder="Ej: Office Depot" value={movimientoForm.solicitanteOProveedor || ''} onChange={e => setMovimientoForm({...movimientoForm, solicitanteOProveedor: e.target.value})} />
-                   </div>
-                   <div>
-                       <label className="block text-sm font-medium text-gray-700 mb-1">Motivo / Factura Ref.</label>
-                       <input type="text" className="w-full border p-2 rounded" placeholder="Ej: Compra mensual Fac-123" value={movimientoForm.motivo || ''} onChange={e => setMovimientoForm({...movimientoForm, motivo: e.target.value})} />
+                   <div className="flex justify-between w-full md:w-1/3 text-lg font-bold text-indigo-700 border-t border-indigo-100 pt-2 mt-2">
+                       <span>Total Factura:</span>
+                       <span>${totalFactura.toFixed(2)}</span>
                    </div>
 
                    <button 
-                     onClick={() => procesarMovimiento(TipoMovimiento.ENTRADA)}
-                     disabled={loading}
-                     className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 mt-4 flex justify-center items-center gap-2"
+                       onClick={guardarFacturaCompra}
+                       disabled={loading || cart.length === 0}
+                       className="mt-4 bg-green-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                    >
-                       <ArrowRight size={20} /> Registrar Entrada al Stock
+                       {loading ? <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> : <Save size={20}/>}
+                       Procesar Factura y Cargar Stock
                    </button>
                </div>
            </div>
@@ -501,7 +691,7 @@ export const Almacen: React.FC = () => {
                    </div>
 
                    <button 
-                     onClick={() => procesarMovimiento(TipoMovimiento.SALIDA)}
+                     onClick={procesarSalida}
                      disabled={loading}
                      className="w-full bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 mt-4 flex justify-center items-center gap-2"
                    >
@@ -567,7 +757,7 @@ export const Almacen: React.FC = () => {
                                <th className="px-6 py-3">Tipo</th>
                                <th className="px-6 py-3">Artículo</th>
                                <th className="px-6 py-3 text-right">Cant.</th>
-                               <th className="px-6 py-3 text-right">Costo ($)</th>
+                               <th className="px-6 py-3 text-right">Costo Total ($)</th>
                                <th className="px-6 py-3">Responsable / Prov.</th>
                                <th className="px-6 py-3">Motivo</th>
                                <th className="px-6 py-3">Usuario Reg.</th>
@@ -585,7 +775,7 @@ export const Almacen: React.FC = () => {
                                    <td className="px-6 py-4 font-medium">{mov.nombreArticulo}</td>
                                    <td className="px-6 py-4 text-right font-mono text-gray-800 font-bold">{mov.cantidad}</td>
                                    <td className="px-6 py-4 text-right font-mono text-gray-800">
-                                       {mov.costoTotal ? `$${mov.costoTotal}` : '-'}
+                                       {mov.costoTotal ? `$${mov.costoTotal.toFixed(2)}` : '-'}
                                    </td>
                                    <td className="px-6 py-4">{mov.solicitanteOProveedor}</td>
                                    <td className="px-6 py-4 text-xs">{mov.motivo}</td>

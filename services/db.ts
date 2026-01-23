@@ -150,6 +150,10 @@ class DatabaseService {
   async saveMovimiento(movimiento: MovimientoInventario): Promise<void> {
     await this.fetchAPI('saveMovimiento', movimiento, 'POST');
   }
+
+  async saveMovimientoBatch(movimientos: MovimientoInventario[]): Promise<void> {
+    await this.fetchAPI('saveMovimientoBatch', movimientos, 'POST');
+  }
   
   // --- NOMINA / EMPLEADOS ---
   
