@@ -1,5 +1,5 @@
 
-import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User, ArticuloInventario, MovimientoInventario } from '../types';
+import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User, ArticuloInventario, MovimientoInventario, Empleado } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
 class DatabaseService {
@@ -150,6 +150,19 @@ class DatabaseService {
   async saveMovimiento(movimiento: MovimientoInventario): Promise<void> {
     await this.fetchAPI('saveMovimiento', movimiento, 'POST');
   }
+  
+  // --- NOMINA / EMPLEADOS ---
+  
+  async getEmpleados(): Promise<Empleado[]> {
+    const data = await this.fetchAPI('getEmpleados');
+    return Array.isArray(data) ? data : [];
+  }
+  
+  async saveEmpleado(empleado: Empleado): Promise<void> {
+    await this.fetchAPI('saveEmpleado', empleado, 'POST');
+  }
+  
+  // Usamos saveEmpleado con estado INACTIVO para dar de baja
 
   // --- Lógica de Negocio (Helpers Locales) ---
   generarMatricula(cedula: string): string {

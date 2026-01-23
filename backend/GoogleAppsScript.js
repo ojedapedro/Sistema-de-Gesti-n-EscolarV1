@@ -171,6 +171,27 @@ function doGet(e) {
 
       result = { articulos, movimientos };
     }
+    else if (action === 'getEmpleados') {
+       const sheet = ss.getSheetByName('Employees');
+       if (!sheet) result = [];
+       else {
+         const rows = sheet.getDataRange().getValues();
+         rows.shift();
+         result = rows.map(r => ({
+           id: String(r[0]),
+           cedula: String(r[1]),
+           nombres: String(r[2]),
+           apellidos: String(r[3]),
+           departamento: String(r[4]),
+           cargo: String(r[5]),
+           fechaIngreso: formatDateStr(r[6]),
+           sueldoBase: Number(r[7] || 0),
+           bono: Number(r[8] || 0),
+           diasVacacionesPendientes: Number(r[9] || 0),
+           estado: String(r[10] || 'ACTIVO')
+         }));
+       }
+    }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -392,6 +413,27 @@ function doPost(e) {
       ]);
       return success('Movimiento registrado');
     }
+    
+    // --- EMPLEADOS ---
+    if (action === 'saveEmpleado') {
+      let sheet = getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);
+      const rows = sheet.getDataRange().getValues();
+      let rowIndex = -1;
+
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(data.id)) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
+      
+      const rowData = [data.id, data.cedula, data.nombres, data.apellidos, data.departamento, data.cargo, data.fechaIngreso, data.sueldoBase, data.bono, data.diasVacacionesPendientes, data.estado];
+      
+      if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, 11).setValues([rowData]);
+      else sheet.appendRow(rowData);
+      
+      return success('Empleado guardado');
+    }
 
     return errorResponse("Accion desconocida");
 
@@ -448,4 +490,5 @@ function setup() {
   getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
   getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
   getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
+  getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);
 }

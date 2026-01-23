@@ -151,3 +151,39 @@ export interface MovimientoInventario {
   motivo: string; // "Limpieza General", "Dotación Inicio Año", etc.
   usuarioRegistra: string; // Usuario del sistema
 }
+
+// --- TIPOS DE NÓMINA ---
+
+export enum Departamento {
+  DIRECTIVO = 'Personal Directivo',
+  DOCENTE = 'Personal Docente',
+  ADMINISTRATIVO = 'Personal Administrativo',
+  MANTENIMIENTO = 'Personal de Mantenimiento'
+}
+
+export enum Cargo {
+  DIRECTOR = 'Director',
+  SUB_DIRECTOR = 'Sub Director',
+  JEFE_CONTROL_ESTUDIOS = 'Jefe de Control de Estudios',
+  DOCENTE_I = 'Docente Tipo I',
+  DOCENTE_II = 'Docente Tipo II',
+  DOCENTE_III = 'Docente Tipo III',
+  ADMINISTRADORA = 'Administradora',
+  ANALISTA_ADMIN = 'Analista de Administración',
+  CAJERA = 'Cajera',
+  AUXILIAR_MANTENIMIENTO = 'Auxiliar de Mantenimiento'
+}
+
+export interface Empleado {
+  id: string;
+  cedula: string;
+  nombres: string;
+  apellidos: string;
+  departamento: Departamento;
+  cargo: Cargo;
+  fechaIngreso: string;
+  sueldoBase: number; // Mensual
+  bono: number; // Mensual
+  diasVacacionesPendientes: number;
+  estado: 'ACTIVO' | 'INACTIVO';
+}
