@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { ArticuloInventario, MovimientoInventario, CategoriaInsumo, TipoMovimiento } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter, X } from 'lucide-react';
+import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter, X, Printer, CheckCircle, FileText } from 'lucide-react';
 import autoTable from 'jspdf-autotable';
 import { jsPDF } from 'jspdf';
 import { LOGO_URL } from '../constants';
@@ -51,6 +51,10 @@ export const Almacen: React.FC = () => {
   const [movimientoForm, setMovimientoForm] = useState<Partial<MovimientoInventario>>({
     fecha: new Date().toISOString().split('T')[0]
   });
+
+  // Estado para el Modal de Verificación de Salida
+  const [showReciboSalida, setShowReciboSalida] = useState(false);
+  const [ultimoMovimiento, setUltimoMovimiento] = useState<MovimientoInventario | null>(null);
 
   useEffect(() => {
     cargarInventario();
@@ -142,8 +146,16 @@ export const Almacen: React.FC = () => {
         await db.saveMovimiento(nuevoMov);
         setMovimientoForm({ fecha: new Date().toISOString().split('T')[0] }); // Reset parcial
         await cargarInventario();
-        alert("Movimiento registrado con éxito.");
-        setView('INVENTARIO');
+
+        if (tipo === TipoMovimiento.SALIDA) {
+            // Abrir Modal de Verificación e Impresión
+            setUltimoMovimiento(nuevoMov);
+            setShowReciboSalida(true);
+        } else {
+            alert("Entrada de almacén registrada con éxito.");
+            setView('INVENTARIO');
+        }
+
     } catch(e) {
         console.error(e);
         alert("Error registrando movimiento");
@@ -183,6 +195,71 @@ export const Almacen: React.FC = () => {
         }
     });
     doc.save("inventario_actual.pdf");
+  };
+
+  // Imprimir Comprobante de Salida (Con Firmas)
+  const imprimirComprobanteSalida = async () => {
+    if(!ultimoMovimiento) return;
+
+    const doc = new jsPDF();
+    const logo = await loadImage(LOGO_URL);
+    if(logo) doc.addImage(logo, 'PNG', 15, 10, 25, 25);
+
+    // Header
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("COMPROBANTE DE SALIDA DE ALMACÉN", 105, 25, { align: 'center' });
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Fecha: ${ultimoMovimiento.fecha}`, 105, 32, { align: 'center' });
+    doc.text(`Control N°: ${ultimoMovimiento.id.substring(0,8).toUpperCase()}`, 105, 38, { align: 'center' });
+
+    doc.setLineWidth(0.5);
+    doc.line(15, 45, 195, 45);
+
+    // Detalles
+    doc.setFontSize(12);
+    doc.text("Detalles de la Requisición:", 15, 55);
+    
+    const detailsData = [
+        ['Artículo / Insumo', ultimoMovimiento.nombreArticulo],
+        ['Categoría', ultimoMovimiento.categoria],
+        ['Cantidad Entregada', String(ultimoMovimiento.cantidad)],
+        ['Solicitado Por', ultimoMovimiento.solicitanteOProveedor],
+        ['Departamento / Motivo', ultimoMovimiento.motivo],
+        ['Registrado por (Sistema)', ultimoMovimiento.usuarioRegistra],
+    ];
+
+    autoTable(doc, {
+        startY: 60,
+        head: [['Concepto', 'Descripción']],
+        body: detailsData,
+        theme: 'grid',
+        headStyles: { fillColor: [220, 220, 220], textColor: 20 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 60 } }
+    });
+
+    // Zona de Firmas
+    const finalY = (doc as any).lastAutoTable.finalY + 40;
+    
+    doc.setFontSize(10);
+    
+    // Firma 1: Almacenista
+    doc.line(20, finalY, 80, finalY);
+    doc.text("Entregado Por (Almacén)", 50, finalY + 5, { align: 'center' });
+    doc.text(`${ultimoMovimiento.usuarioRegistra}`, 50, finalY + 10, { align: 'center' });
+
+    // Firma 2: Solicitante
+    doc.line(130, finalY, 190, finalY);
+    doc.text("Recibido Conforme", 160, finalY + 5, { align: 'center' });
+    doc.text(`${ultimoMovimiento.solicitanteOProveedor}`, 160, finalY + 10, { align: 'center' });
+
+    // Footer
+    doc.setFontSize(8);
+    doc.text("Este documento certifica la salida de inventario y la recepción conforme del material.", 105, 280, { align: 'center' });
+
+    doc.save(`Salida_Almacen_${ultimoMovimiento.id.substring(0,4)}.pdf`);
   };
 
   const articulosFiltrados = articulos.filter(a => {
@@ -514,6 +591,66 @@ export const Almacen: React.FC = () => {
                            )}
                        </tbody>
                    </table>
+               </div>
+           </div>
+       )}
+
+       {/* MODAL VERIFICACIÓN DE REQUISICIÓN */}
+       {showReciboSalida && ultimoMovimiento && (
+           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+               <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden animate-in zoom-in duration-200">
+                   <div className="bg-orange-600 p-4 flex justify-between items-center text-white">
+                       <h3 className="font-bold flex items-center gap-2"><CheckCircle /> Requisición Exitosa</h3>
+                       <button onClick={() => { setShowReciboSalida(false); setView('INVENTARIO'); }} className="hover:bg-orange-700 rounded p-1"><X /></button>
+                   </div>
+                   
+                   <div className="p-6">
+                       <div className="text-center mb-6">
+                           <div className="bg-orange-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-2">
+                               <Archive size={32} className="text-orange-600"/>
+                           </div>
+                           <h4 className="text-xl font-bold text-gray-800">Comprobante de Salida</h4>
+                           <p className="text-gray-500 text-sm">Control N°: {ultimoMovimiento.id.substring(0,8)}</p>
+                       </div>
+
+                       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm space-y-2 mb-6">
+                           <div className="flex justify-between border-b pb-2">
+                               <span className="text-gray-500">Fecha:</span>
+                               <span className="font-bold">{ultimoMovimiento.fecha}</span>
+                           </div>
+                           <div className="flex justify-between">
+                               <span className="text-gray-500">Artículo:</span>
+                               <span className="font-bold text-gray-900">{ultimoMovimiento.nombreArticulo}</span>
+                           </div>
+                           <div className="flex justify-between">
+                               <span className="text-gray-500">Cantidad Retirada:</span>
+                               <span className="font-bold text-xl text-orange-600">{ultimoMovimiento.cantidad}</span>
+                           </div>
+                           <div className="flex justify-between">
+                               <span className="text-gray-500">Solicitante:</span>
+                               <span className="font-bold">{ultimoMovimiento.solicitanteOProveedor}</span>
+                           </div>
+                           <div className="flex justify-between">
+                               <span className="text-gray-500">Motivo/Depto:</span>
+                               <span className="font-bold">{ultimoMovimiento.motivo}</span>
+                           </div>
+                       </div>
+
+                       <div className="flex gap-3">
+                           <button 
+                             onClick={() => { setShowReciboSalida(false); setView('INVENTARIO'); }} 
+                             className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50 font-medium"
+                           >
+                               Cerrar
+                           </button>
+                           <button 
+                             onClick={imprimirComprobanteSalida} 
+                             className="flex-1 bg-slate-800 text-white py-2 rounded-lg hover:bg-slate-700 font-medium flex justify-center items-center gap-2"
+                           >
+                               <Printer size={18} /> Imprimir Comprobante
+                           </button>
+                       </div>
+                   </div>
                </div>
            </div>
        )}
