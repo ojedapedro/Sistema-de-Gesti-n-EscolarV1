@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { ArticuloInventario, MovimientoInventario, CategoriaInsumo, TipoMovimiento } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter } from 'lucide-react';
+import { Package, Plus, Minus, Search, History, AlertTriangle, ArrowRight, ArrowLeft, Archive, ShoppingCart, Filter, X } from 'lucide-react';
 import autoTable from 'jspdf-autotable';
 import { jsPDF } from 'jspdf';
 import { LOGO_URL } from '../constants';
@@ -34,9 +34,14 @@ export const Almacen: React.FC = () => {
   const [movimientos, setMovimientos] = useState<MovimientoInventario[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
+  // Filtros Inventario
   const [filtroCategoria, setFiltroCategoria] = useState<string>('TODAS');
   const [busqueda, setBusqueda] = useState('');
+
+  // Filtros Historial (Auditoría)
+  const [historialFechaInicio, setHistorialFechaInicio] = useState('');
+  const [historialFechaFin, setHistorialFechaFin] = useState('');
+  const [historialBusqueda, setHistorialBusqueda] = useState('');
 
   // Formulario Articulo Nuevo
   const [nuevoArticulo, setNuevoArticulo] = useState<Partial<ArticuloInventario>>({});
@@ -184,6 +189,17 @@ export const Almacen: React.FC = () => {
     const matchCat = filtroCategoria === 'TODAS' || a.categoria === filtroCategoria;
     const matchSearch = a.nombre.toLowerCase().includes(busqueda.toLowerCase());
     return matchCat && matchSearch;
+  });
+
+  // Lógica Filtrado Historial
+  const movimientosFiltrados = movimientos.filter(m => {
+      const matchProd = m.nombreArticulo.toLowerCase().includes(historialBusqueda.toLowerCase());
+      
+      let matchFecha = true;
+      if (historialFechaInicio) matchFecha = matchFecha && m.fecha >= historialFechaInicio;
+      if (historialFechaFin) matchFecha = matchFecha && m.fecha <= historialFechaFin;
+
+      return matchProd && matchFecha;
   });
 
   // --- UI RENDER ---
@@ -416,6 +432,50 @@ export const Almacen: React.FC = () => {
        {view === 'HISTORIAL' && (
            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><History size={20}/> Auditoría de Movimientos</h3>
+               
+               {/* BARRA DE FILTROS */}
+               <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Buscar Producto / Insumo</label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
+                            <input 
+                                type="text" 
+                                placeholder="Nombre del insumo..." 
+                                value={historialBusqueda}
+                                onChange={e => setHistorialBusqueda(e.target.value)}
+                                className="pl-9 w-full border border-gray-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Desde Fecha</label>
+                        <input 
+                            type="date" 
+                            value={historialFechaInicio}
+                            onChange={e => setHistorialFechaInicio(e.target.value)}
+                            className="border border-gray-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Hasta Fecha</label>
+                        <input 
+                            type="date" 
+                            value={historialFechaFin}
+                            onChange={e => setHistorialFechaFin(e.target.value)}
+                            className="border border-gray-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <div className="flex items-end">
+                        <button 
+                            onClick={() => { setHistorialBusqueda(''); setHistorialFechaInicio(''); setHistorialFechaFin(''); }}
+                            className="bg-white border border-gray-300 text-gray-600 px-4 py-2 rounded text-sm hover:bg-gray-100 flex items-center gap-2 h-[38px]"
+                        >
+                            <X size={16} /> Limpiar
+                        </button>
+                    </div>
+               </div>
+
                <div className="overflow-x-auto max-h-[600px]">
                    <table className="w-full text-sm text-left text-gray-500">
                        <thead className="text-xs text-gray-700 uppercase bg-gray-50 sticky top-0">
@@ -430,21 +490,28 @@ export const Almacen: React.FC = () => {
                            </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-100">
-                           {movimientos.map(mov => (
+                           {movimientosFiltrados.map(mov => (
                                <tr key={mov.id} className="hover:bg-gray-50">
-                                   <td className="px-6 py-4">{mov.fecha}</td>
+                                   <td className="px-6 py-4 whitespace-nowrap">{mov.fecha}</td>
                                    <td className="px-6 py-4">
                                        <span className={`px-2 py-1 rounded text-xs font-bold ${mov.tipo === TipoMovimiento.ENTRADA ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                                            {mov.tipo === TipoMovimiento.ENTRADA ? 'ENTRADA' : 'SALIDA'}
                                        </span>
                                    </td>
                                    <td className="px-6 py-4 font-medium">{mov.nombreArticulo}</td>
-                                   <td className="px-6 py-4 text-right font-mono">{mov.cantidad}</td>
+                                   <td className="px-6 py-4 text-right font-mono text-gray-800 font-bold">{mov.cantidad}</td>
                                    <td className="px-6 py-4">{mov.solicitanteOProveedor}</td>
                                    <td className="px-6 py-4 text-xs">{mov.motivo}</td>
                                    <td className="px-6 py-4 text-xs text-gray-400">{mov.usuarioRegistra}</td>
                                </tr>
                            ))}
+                           {movimientosFiltrados.length === 0 && (
+                               <tr>
+                                   <td colSpan={7} className="text-center py-8 text-gray-400">
+                                       No se encontraron movimientos con los filtros seleccionados.
+                                   </td>
+                               </tr>
+                           )}
                        </tbody>
                    </table>
                </div>
