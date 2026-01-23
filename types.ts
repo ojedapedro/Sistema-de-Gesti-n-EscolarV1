@@ -187,3 +187,21 @@ export interface Empleado {
   diasVacacionesPendientes: number;
   estado: 'ACTIVO' | 'INACTIVO';
 }
+
+export interface RegistroNomina {
+  id: string;
+  empleadoId: string;
+  nombreCompleto: string;
+  cedula: string;
+  cargo: string;
+  periodo: string; // Ej: "01-15 Septiembre 2025"
+  fechaPago: string;
+  sueldoBase: number;
+  bono: number;
+  asignacionesExtra: number; // Otros ingresos
+  deduccionSSO: number; // IVSS (4%)
+  deduccionSPF: number; // Paro Forzoso (0.5%)
+  deduccionFAOV: number; // Vivienda (1%)
+  otrasDeducciones: number;
+  totalPagar: number;
+}
