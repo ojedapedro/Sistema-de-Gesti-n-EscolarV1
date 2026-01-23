@@ -111,3 +111,43 @@ export interface DeudaInfo {
   totalDeuda: number;
   detalles: string[];
 }
+
+// --- TIPOS DE ALMACÉN ---
+
+export enum CategoriaInsumo {
+  LIMPIEZA = 'Insumos de Limpieza',
+  ESCOLAR = 'Material Escolar',
+  OFICINA = 'Material de Oficina',
+  UNIFORME_DOCENTE = 'Uniformes (Docentes)',
+  UNIFORME_ADMIN = 'Uniformes (Administrativo)',
+  UNIFORME_MANTENIMIENTO = 'Uniformes (Mantenimiento)',
+  OTROS = 'Otros'
+}
+
+export enum TipoMovimiento {
+  ENTRADA = 'Compra / Entrada',
+  SALIDA = 'Requisición / Salida'
+}
+
+export interface ArticuloInventario {
+  id: string;
+  nombre: string;
+  categoria: CategoriaInsumo;
+  unidadMedida: string; // Unidad, Litro, Caja, Paquete
+  stockMinimo: number;
+  // El stock actual se calcula, no se guarda estático para evitar inconsistencias
+  stockCalculado?: number; 
+}
+
+export interface MovimientoInventario {
+  id: string;
+  fecha: string;
+  articuloId: string;
+  nombreArticulo: string; // Redundancia para reportes rápidos
+  categoria: CategoriaInsumo;
+  tipo: TipoMovimiento;
+  cantidad: number;
+  solicitanteOProveedor: string; // Quien pide (salida) o Proveedor (entrada)
+  motivo: string; // "Limpieza General", "Dotación Inicio Año", etc.
+  usuarioRegistra: string; // Usuario del sistema
+}

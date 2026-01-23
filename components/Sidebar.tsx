@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen, LogOut, Shield } from 'lucide-react';
+import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen, LogOut, Shield, Package } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 
@@ -41,6 +41,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, 
       label: 'Verificación Pagos', 
       icon: FileCheck,
       roles: [UserRole.ADMIN, UserRole.AUXILIAR, UserRole.CAJERO]
+    },
+    {
+      id: 'almacen',
+      label: 'Almacén / Inventario',
+      icon: Package,
+      roles: [UserRole.ADMIN, UserRole.AUXILIAR]
     },
     { 
       id: 'libro', 

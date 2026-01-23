@@ -2,11 +2,13 @@
 import { NivelEducativo } from './types';
 
 // IMPORTANTE:
-// 1. Copia el código de backend/GoogleAppsScript.js en tu proyecto de Google Apps Script.
-// 2. Ejecuta la función 'setup' una vez.
-// 3. Haz Deploy > Nueva implementación > Tipo: Web App > Acceso: Cualquier persona (Anyone).
-// 4. Pega la URL generada aquí abajo:
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwfkJjOZ-85UvXnSKMjj7Cm9l_yeQrWSbSoDVzRW9sgNeJWGx7GejGs4UsxdSfTotcq/exec"; 
+// 1. Crea una Hoja de Cálculo en Google.
+// 2. Ve a Extensiones > Apps Script y pega el código de backend/GoogleAppsScript.js
+// 3. En el Script, pon el ID de tu hoja de cálculo.
+// 4. Publica como Web App (Acceso: "Cualquier persona").
+// 5. Pega la URL generada (termina en /exec) abajo:
+
+export const GOOGLE_SCRIPT_URL = "PONER_AQUI_TU_URL_DEL_SCRIPT"; 
 
 export const MENSUALIDADES: Record<NivelEducativo, number> = {
   [NivelEducativo.MATERNAL]: 120,

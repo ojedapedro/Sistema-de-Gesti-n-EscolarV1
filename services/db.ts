@@ -1,13 +1,17 @@
 
-import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User } from '../types';
+import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User, ArticuloInventario, MovimientoInventario } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
 class DatabaseService {
   
   private async fetchAPI(action: string, params: any = {}, method: 'GET' | 'POST' = 'GET'): Promise<any> {
-    if (GOOGLE_SCRIPT_URL.includes("xxxxxx")) {
-      console.warn("URL de Google Script no configurada en constants.ts");
-      return method === 'GET' ? [] : { status: 'error', message: 'Configurar URL API' };
+    
+    // Validación de Configuración
+    if (GOOGLE_SCRIPT_URL.includes("PONER_AQUI") || GOOGLE_SCRIPT_URL.includes("xxxxxx") || !GOOGLE_SCRIPT_URL.startsWith("http")) {
+      console.warn("URL de Google Script no configurada correctamente.");
+      const errorMsg = "ERROR DE CONFIGURACIÓN: Debes configurar la URL de tu Google Apps Script en el archivo constants.ts. Ve a Extensiones > Apps Script > Implementar.";
+      if (method === 'GET') return []; 
+      throw new Error(errorMsg);
     }
 
     try {
@@ -23,16 +27,29 @@ class DatabaseService {
         });
       }
 
-      const json = await response.json();
+      const text = await response.text();
+      let json;
+      
+      try {
+        json = JSON.parse(text);
+      } catch (parseError) {
+        console.error("Respuesta no es JSON válido:", text);
+        // Si Google devuelve HTML (error 404, 401, o error de script), captúralo aquí
+        if (text.includes("<!DOCTYPE html>")) {
+           throw new Error("Error de Conexión: La URL del Script es incorrecta, no tienes permisos públicos o el Script ha fallado. Revisa la consola.");
+        }
+        throw new Error("Error en el servidor: Respuesta inválida.");
+      }
       
       if (json && json.status === 'error') {
-        throw new Error(json.message || 'Error desconocido del servidor');
+        throw new Error(json.message || 'Error desconocido del backend');
       }
 
       return json;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("API Error:", error);
+      // Re-lanzar para que los componentes muestren el error en la UI
       throw error;
     }
   }
@@ -67,6 +84,8 @@ class DatabaseService {
       const config = await this.fetchAPI('getConfig');
       return config.tasaCambio ? config : { tasaCambio: 60, fechaActualizacion: new Date().toISOString() };
     } catch (e) {
+      // Si falla, retornamos default para no romper la app en carga inicial, pero logueamos
+      console.warn("Usando config default por error de red.");
       return { tasaCambio: 60, fechaActualizacion: new Date().toISOString() };
     }
   }
@@ -118,6 +137,20 @@ class DatabaseService {
     await this.fetchAPI('updateEstadoPago', { id, referencia, cedulaRepresentante: cedula, nuevoEstado }, 'POST');
   }
 
+  // --- ALMACEN / INVENTARIO ---
+
+  async getInventarioData(): Promise<{ articulos: ArticuloInventario[], movimientos: MovimientoInventario[] }> {
+    return await this.fetchAPI('getInventarioData');
+  }
+
+  async saveArticulo(articulo: ArticuloInventario): Promise<void> {
+    await this.fetchAPI('saveArticulo', articulo, 'POST');
+  }
+
+  async saveMovimiento(movimiento: MovimientoInventario): Promise<void> {
+    await this.fetchAPI('saveMovimiento', movimiento, 'POST');
+  }
+
   // --- Lógica de Negocio (Helpers Locales) ---
   generarMatricula(cedula: string): string {
     return `mat-${ANIO_ESCOLAR_ACTUAL}-${cedula}`;
@@ -128,13 +161,9 @@ class DatabaseService {
     const currentMonth = now.getMonth(); 
     let meses = 0;
     
-    // Septiembre es mes 8 (0-indexado)
-    // Sept (8) -> 1 mes deuda
-    // Oct (9) -> 2 meses deuda
     if (currentMonth >= 8) { 
        meses = currentMonth - 7; 
     } else { 
-       // Enero (0) -> 4 (sep-dic) + 1 = 5
        meses = 4 + (currentMonth + 1);
     }
     return Math.max(1, meses);
@@ -153,8 +182,6 @@ class DatabaseService {
        const configNivel = nivelesConfig.find(n => n.nivel === alumno.nivel);
        const precioMensual = configNivel ? configNivel.precio : (MENSUALIDADES[alumno.nivel] || 0);
        
-       // CORRECCIÓN: Se elimina el +1 que asumía inscripción o mes extra.
-       // La deuda es estrictamente: precio * meses escolares pasados.
        const mesesCobranza = mesesTranscurridos; 
        
        deudaTotalEsperada += (precioMensual * mesesCobranza);

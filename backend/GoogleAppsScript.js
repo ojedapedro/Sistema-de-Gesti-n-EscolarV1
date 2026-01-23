@@ -1,14 +1,25 @@
 
-// ID de la Hoja de Cálculo (GestionAdminLB)
-const SPREADSHEET_ID = '13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs';
+// --- CONFIGURACIÓN OBLIGATORIA ---
+// Copia el ID de tu hoja de cálculo de la URL del navegador.
+// Ejemplo: https://docs.google.com/spreadsheets/d/13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs/edit
+// El ID es: 13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs
+
+const SPREADSHEET_ID = 'PONER_AQUI_EL_ID_DE_TU_HOJA_DE_CALCULO'; 
 
 function doGet(e) {
-  const action = e.parameter.action;
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  let result = {};
+  const lock = LockService.getScriptLock();
+  lock.tryLock(10000);
   
   try {
+    if (SPREADSHEET_ID.includes('PONER_AQUI')) {
+      return errorResponse("ERROR CRÍTICO: No has configurado el SPREADSHEET_ID en el código de Apps Script.");
+    }
+
+    const action = e.parameter.action;
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    let result = {};
+    
     if (action === 'getConfig') {
       let sheet = ss.getSheetByName('Config');
       if (!sheet) {
@@ -109,13 +120,11 @@ function doGet(e) {
       }
     }
     else if (action === 'getUsers') {
-      // ACTUALIZADO: Lee de la hoja UserAdmin
       let sheet = ss.getSheetByName('UserAdmin');
       if (!sheet) result = [];
       else {
         const rows = sheet.getDataRange().getValues();
-        rows.shift(); // Quitar header
-        // Mapeo: Cedula(0), Nombre(1), Rol(2), Password(3)
+        rows.shift(); 
         result = rows.map(row => ({
           cedula: String(row[0]),
           nombre: String(row[1]),
@@ -124,31 +133,77 @@ function doGet(e) {
         }));
       }
     }
+    else if (action === 'getInventarioData') {
+      const sheetItems = ss.getSheetByName('InventoryItems');
+      const sheetMoves = ss.getSheetByName('InventoryMovements');
+      
+      let articulos = [];
+      let movimientos = [];
+
+      if (sheetItems) {
+         const rows = sheetItems.getDataRange().getValues();
+         rows.shift();
+         articulos = rows.map(r => ({
+            id: String(r[0]),
+            nombre: String(r[1]),
+            categoria: String(r[2]),
+            unidadMedida: String(r[3]),
+            stockMinimo: Number(r[4])
+         }));
+      }
+
+      if (sheetMoves) {
+         const rows = sheetMoves.getDataRange().getValues();
+         rows.shift();
+         movimientos = rows.map(r => ({
+            id: String(r[0]),
+            fecha: formatDateStr(r[1]),
+            articuloId: String(r[2]),
+            nombreArticulo: String(r[3]),
+            categoria: String(r[4]),
+            tipo: String(r[5]),
+            cantidad: Number(r[6]),
+            solicitanteOProveedor: String(r[7]),
+            motivo: String(r[8]),
+            usuarioRegistra: String(r[9])
+         }));
+      }
+
+      result = { articulos, movimientos };
+    }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
       
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({status: 'error', message: error.toString()}))
-      .setMimeType(ContentService.MimeType.JSON);
+    return errorResponse(error.toString());
+  } finally {
+    lock.releaseLock();
   }
 }
 
 function doPost(e) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let body = {};
-  try { body = JSON.parse(e.postData.contents); } catch(e) { return errorResponse("Invalid JSON"); }
-  
-  const action = body.action;
-  const data = body.data;
+  const lock = LockService.getScriptLock();
+  lock.tryLock(10000);
 
   try {
+    if (SPREADSHEET_ID.includes('PONER_AQUI')) {
+      return errorResponse("ERROR: Configura el SPREADSHEET_ID en el backend.");
+    }
+    
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let body = {};
+    try { body = JSON.parse(e.postData.contents); } catch(e) { return errorResponse("Invalid JSON"); }
+    
+    const action = body.action;
+    const data = body.data;
+
     // --- AUTENTICACIÓN ---
     if (action === 'login') {
       const { cedula, password } = data;
 
-      // 1. SUPERUSUARIO (Hardcoded para acceso inicial/rescate)
-      if ((cedula === 'admin' || cedula === 'superadmin') && password === '230274') {
+      // 1. SUPERUSUARIO DE EMERGENCIA
+      if ((cedula === 'admin' || cedula === 'superadmin') && password === 'admin123') {
          return success({
            cedula: '0000',
            nombre: 'Super Administrador',
@@ -157,16 +212,15 @@ function doPost(e) {
          });
       }
 
-      // 2. Usuarios Normales (Desde Hoja UserAdmin)
+      // 2. Usuarios Normales
       const sheet = ss.getSheetByName('UserAdmin');
-      if (!sheet) return errorResponse("Credenciales inválidas (BD no encontrada)");
+      if (!sheet) return errorResponse("BD Usuarios no inicializada. Corre la función setup() o entra con superadmin.");
 
       const rows = sheet.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
         const rowCedula = String(rows[i][0]);
         const rowPass = String(rows[i][3]);
         
-        // Autenticación simple: Cédula + Contraseña
         if (rowCedula === cedula && rowPass === password) {
           return success({
             cedula: rowCedula,
@@ -179,26 +233,23 @@ function doPost(e) {
       return errorResponse("Usuario o contraseña incorrectos");
     }
     
-    // --- USUARIOS (CRUD en UserAdmin) ---
+    // --- USUARIOS ---
     if (action === 'saveUser') {
       let sheet = getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
       const rows = sheet.getDataRange().getValues();
       let rowIndex = -1;
 
-      // Buscar si ya existe la cedula para editar
       for (let i = 1; i < rows.length; i++) {
         if (String(rows[i][0]) === String(data.cedula)) {
-          rowIndex = i + 1; // 1-based index
+          rowIndex = i + 1; 
           break;
         }
       }
 
       if (rowIndex > 0) {
-        // Actualizar
         sheet.getRange(rowIndex, 1, 1, 4).setValues([[data.cedula, data.nombre, data.rol, data.password]]);
         return success('Usuario actualizado');
       } else {
-        // Crear nuevo
         sheet.appendRow([data.cedula, data.nombre, data.rol, data.password]);
         return success('Usuario creado');
       }
@@ -252,6 +303,7 @@ function doPost(e) {
       if(data.alumnos) {
          data.alumnos.forEach(alu => {
             const stuId = alu.id || `STU-${Math.floor(Math.random()*100000)}`;
+            // Verificar duplicados de alumnos muy básicos para evitar basura
             sheetStu.appendRow([stuId, data.cedula, `${alu.nombres} ${alu.apellidos}`, alu.nivel, "Mañana", alu.seccion]);
          });
       }
@@ -304,11 +356,49 @@ function doPost(e) {
       }
       return errorResponse('Pago no encontrado para actualizar');
     }
+    
+    // --- ALMACEN ---
+    if (action === 'saveArticulo') {
+      let sheet = getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
+      const rows = sheet.getDataRange().getValues();
+      let rowIndex = -1;
+      
+      for(let i=1; i<rows.length; i++){
+        if(String(rows[i][0]) === String(data.id)){
+           rowIndex = i+1; break;
+        }
+      }
+      
+      const rowData = [data.id, data.nombre, data.categoria, data.unidadMedida, data.stockMinimo];
+      if(rowIndex > 0) sheet.getRange(rowIndex, 1, 1, 5).setValues([rowData]);
+      else sheet.appendRow(rowData);
+      
+      return success('Artículo guardado');
+    }
+
+    if (action === 'saveMovimiento') {
+      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
+      sheet.appendRow([
+        data.id, 
+        data.fecha, 
+        data.articuloId, 
+        data.nombreArticulo, 
+        data.categoria, 
+        data.tipo, 
+        data.cantidad, 
+        data.solicitanteOProveedor, 
+        data.motivo, 
+        data.usuarioRegistra
+      ]);
+      return success('Movimiento registrado');
+    }
 
     return errorResponse("Accion desconocida");
 
   } catch (e) {
     return errorResponse(e.toString());
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -355,9 +445,7 @@ function setup() {
     'paymentMethod', 'reference', 'amount$', 'amountBs', 
     'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
   ]);
-  // ACTUALIZADO: Crea la hoja UserAdmin
   getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
+  getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
+  getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario']);
 }
-// Ejecutar esta función una vez para inicializar las hojas necesarias
-// luego eliminar o comentar esta función para evitar ejecuciones accidentales
-// setup();
