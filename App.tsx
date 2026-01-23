@@ -11,6 +11,7 @@ import { LibroContable } from './components/LibroContable';
 import { Usuarios } from './components/Usuarios';
 import { Almacen } from './components/Almacen';
 import { Nomina } from './components/Nomina';
+import { PagosServicios } from './components/PagosServicios';
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -41,6 +42,7 @@ const AppContent: React.FC = () => {
       case 'registro': return <RegistroAlumno />;
       case 'pagos': return <Pagos />;
       case 'verificacion': return <Verificacion />;
+      case 'pagos_servicios': return <PagosServicios />;
       case 'almacen': return <Almacen />;
       case 'nomina': return <Nomina />;
       case 'libro': return <LibroContable />;

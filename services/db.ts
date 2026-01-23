@@ -1,5 +1,5 @@
 
-import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User, ArticuloInventario, MovimientoInventario, Empleado, RegistroNomina } from '../types';
+import { Representante, RegistroPago, EstadoPago, SystemConfig, NivelConfig, User, ArticuloInventario, MovimientoInventario, Empleado, RegistroNomina, PagoServicio } from '../types';
 import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../constants';
 
 class DatabaseService {
@@ -169,6 +169,17 @@ class DatabaseService {
   async getNominaHistory(): Promise<RegistroNomina[]> {
     const data = await this.fetchAPI('getNominaHistory');
     return Array.isArray(data) ? data : [];
+  }
+
+  // --- PAGOS SERVICIOS (Nuevo Módulo) ---
+
+  async getPagosServicios(): Promise<PagoServicio[]> {
+    const data = await this.fetchAPI('getPagosServicios');
+    return Array.isArray(data) ? data : [];
+  }
+
+  async savePagoServicio(pago: PagoServicio): Promise<void> {
+    await this.fetchAPI('savePagoServicio', pago, 'POST');
   }
 
   // --- Lógica de Negocio (Helpers Locales) ---

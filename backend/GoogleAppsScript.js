@@ -217,6 +217,29 @@ function doGet(e) {
          }));
        }
     }
+    else if (action === 'getPagosServicios') {
+       const sheet = ss.getSheetByName('ServicePayments');
+       if (!sheet) result = [];
+       else {
+         const rows = sheet.getDataRange().getValues();
+         rows.shift();
+         result = rows.map(r => ({
+           id: String(r[0]),
+           categoria: String(r[1]),
+           proveedor: String(r[2]),
+           descripcion: String(r[3]),
+           fechaVencimiento: formatDateStr(r[4]),
+           fechaPago: formatDateStr(r[5]),
+           monto: Number(r[6] || 0),
+           montoBolivares: Number(r[7] || 0),
+           tasaCambio: Number(r[8] || 0),
+           metodoPago: String(r[9]),
+           referencia: String(r[10]),
+           estado: String(r[11]),
+           registradoPor: String(r[12])
+         }));
+       }
+    }
     
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -468,7 +491,6 @@ function doPost(e) {
       
       if (!Array.isArray(data)) return errorResponse("Data debe ser un array");
 
-      // Usar appendRow para cada item (podría optimizarse con setValues en rango para grandes volúmenes, pero appendRow es más seguro por fila)
       data.forEach(item => {
         sheet.appendRow([
           item.id,
@@ -490,6 +512,22 @@ function doPost(e) {
       });
 
       return success('Nómina guardada');
+    }
+
+    if (action === 'savePagoServicio') {
+      let sheet = getOrCreateSheet(ss, 'ServicePayments', [
+        'ID', 'Categoria', 'Proveedor', 'Descripcion', 'FechaVencimiento', 
+        'FechaPago', 'MontoUSD', 'MontoBS', 'Tasa', 'Metodo', 'Referencia', 'Estado', 'RegistradoPor'
+      ]);
+      
+      const row = [
+        data.id, data.categoria, data.proveedor, data.descripcion, data.fechaVencimiento,
+        data.fechaPago, data.monto, data.montoBolivares, data.tasaCambio, data.metodoPago,
+        data.referencia, data.estado, data.registradoPor
+      ];
+      
+      sheet.appendRow(row);
+      return success('Pago de servicio registrado');
     }
 
     return errorResponse("Accion desconocida");
@@ -551,5 +589,9 @@ function setup() {
   getOrCreateSheet(ss, 'PayrollHistory', [
     'ID', 'EmpleadoID', 'Nombre', 'Cedula', 'Cargo', 'Periodo', 'FechaPago', 
     'SueldoBase', 'Bono', 'Extra', 'DeduccionSSO', 'DeduccionSPF', 'DeduccionFAOV', 'OtrasDeducciones', 'Total'
+  ]);
+  getOrCreateSheet(ss, 'ServicePayments', [
+    'ID', 'Categoria', 'Proveedor', 'Descripcion', 'FechaVencimiento', 
+    'FechaPago', 'MontoUSD', 'MontoBS', 'Tasa', 'Metodo', 'Referencia', 'Estado', 'RegistradoPor'
   ]);
 }

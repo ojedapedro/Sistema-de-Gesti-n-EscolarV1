@@ -205,3 +205,29 @@ export interface RegistroNomina {
   otrasDeducciones: number;
   totalPagar: number;
 }
+
+// --- TIPOS DE PAGOS DE SERVICIOS ---
+
+export enum CategoriaServicio {
+  IMPUESTO_NACIONAL = 'Impuestos Nacionales (SENIAT)',
+  IMPUESTO_MUNICIPAL = 'Impuestos Municipales',
+  SERVICIOS_BASICOS = 'Servicios Básicos (Agua, Luz)',
+  TELECOMUNICACIONES = 'Telecomunicaciones (Internet, Tlf)',
+  OTROS = 'Otros Pagos Administrativos'
+}
+
+export interface PagoServicio {
+  id: string;
+  categoria: CategoriaServicio;
+  proveedor: string; // Ej: CANTV, CORPOELEC, ALCALDIA
+  descripcion: string; // Ej: Factura Marzo 2025
+  fechaVencimiento: string;
+  fechaPago: string;
+  monto: number; // Monto principal (usualmente USD referencial)
+  montoBolivares: number; // Monto pagado en BS
+  tasaCambio: number;
+  metodoPago: MetodoPago;
+  referencia: string;
+  estado: 'PAGADO' | 'PENDIENTE';
+  registradoPor: string;
+}
