@@ -1,13 +1,12 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
-import { Representante, MetodoPago, EstadoPago, RegistroPago, NivelConfig } from '../types';
-import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, LOGO_URL } from '../constants';
-import { Search, DollarSign, CheckCircle, RefreshCw, Loader2, FileText, ArrowLeft, Printer, AlertTriangle, TrendingDown, Save, Calendar, Clock, CreditCard, Tag, FileBarChart, X } from 'lucide-react';
+import { Representante, RegistroPago, MetodoPago, EstadoPago, NivelConfig } from '../types';
+import { Search, CreditCard, DollarSign, CheckCircle, Printer, Loader2, AlertTriangle, FileText } from 'lucide-react';
+import { MENSUALIDADES, ANIO_ESCOLAR_ACTUAL, REQUIERE_VERIFICACION, LOGO_URL } from '../constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Helper para cargar imagen
+// Helper de Imagen (Reutilizado)
 const loadImage = (url: string): Promise<string | null> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -30,908 +29,366 @@ const loadImage = (url: string): Promise<string | null> => {
 };
 
 export const Pagos: React.FC = () => {
-  // Estado Principal
-  const [busquedaCedula, setBusquedaCedula] = useState('');
-  const [representante, setRepresentante] = useState<Representante | null>(null);
-  const [error, setError] = useState('');
-  
-  // Saldo Real (Puede ser negativo si hay saldo a favor)
-  const [saldoReal, setSaldoReal] = useState(0);
-  
-  const [tasaCambio, setTasaCambio] = useState(0);
-  const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingRep, setLoadingRep] = useState(false);
-  const [loadingReporte, setLoadingReporte] = useState(false);
-  const [savingTasa, setSavingTasa] = useState(false);
+    // Estados
+    const [cedulaBusqueda, setCedulaBusqueda] = useState('');
+    const [representante, setRepresentante] = useState<Representante | null>(null);
+    const [historialPagos, setHistorialPagos] = useState<RegistroPago[]>([]);
+    
+    // Configuración
+    const [tasaCambio, setTasaCambio] = useState(0);
+    const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [searching, setSearching] = useState(false);
+    
+    // Formulario de Pago
+    const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
+    const [referencia, setReferencia] = useState('');
+    const [monto, setMonto] = useState('');
+    const [observacion, setObservacion] = useState('');
+    const [conceptoMes, setConceptoMes] = useState(''); 
 
-  // Estado del Formulario
-  const [fechaOperacion, setFechaOperacion] = useState(new Date().toISOString().split('T')[0]);
-  const [monto, setMonto] = useState('');
-  const [montoBs, setMontoBs] = useState('');
-  const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
-  const [referencia, setReferencia] = useState('');
-  const [observaciones, setObservaciones] = useState('');
-  const [formaPago, setFormaPago] = useState('Abono'); 
-  const [mesPago, setMesPago] = useState('Septiembre');
-  const [anioPago, setAnioPago] = useState(ANIO_ESCOLAR_ACTUAL);
-  const [studentId, setStudentId] = useState('');
-  
-  // Lógica Pronto Pago
-  const [aplicarProntoPago, setAplicarProntoPago] = useState(false);
+    // Estado calculado (asíncrono)
+    const [saldoReal, setSaldoReal] = useState(0);
 
-  // Estado Post-Pago (Recibo)
-  const [pagoExitoso, setPagoExitoso] = useState<RegistroPago | null>(null);
-  const [saldoAnteriorRecibo, setSaldoAnteriorRecibo] = useState(0);
-  const [saldoFinalRecibo, setSaldoFinalRecibo] = useState(0);
+    // Cargar Configuración Inicial
+    useEffect(() => {
+        const loadConfig = async () => {
+            try {
+                const [conf, niv] = await Promise.all([db.getConfig(), db.getNiveles()]);
+                setTasaCambio(conf.tasaCambio);
+                setNivelesConfig(niv);
+            } catch (e) {
+                console.error("Error cargando configuración", e);
+            }
+        };
+        loadConfig();
+    }, []);
 
-  // Modal Duplicado
-  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+    // Actualizar Saldo cuando cambia representante o historial
+    useEffect(() => {
+        const updateSaldo = async () => {
+            if (representante) {
+                try {
+                    const s = await db.calcularSaldoPendiente(representante.cedula);
+                    setSaldoReal(s);
+                } catch (e) {
+                    console.error("Error calculando saldo", e);
+                }
+            } else {
+                setSaldoReal(0);
+            }
+        };
+        updateSaldo();
+    }, [representante, historialPagos]);
 
-  const meses = ['Inscripción', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto'];
-
-  useEffect(() => {
-    const init = async () => {
-      const c = await db.getConfig();
-      setTasaCambio(c.tasaCambio || 0);
-      const n = await db.getNiveles();
-      setNivelesConfig(n);
-    };
-    init();
-  }, []);
-
-  // Efecto para detectar fecha de pronto pago (día <= 25)
-  useEffect(() => {
-    if (fechaOperacion) {
-        const partes = fechaOperacion.split('-');
-        const dia = parseInt(partes[2]);
-        // Si es el día 25 o antes, sugerir pronto pago activado
-        if (dia <= 25) {
-            setAplicarProntoPago(true);
-        } else {
-            setAplicarProntoPago(false);
-        }
-    }
-  }, [fechaOperacion]);
-
-  const buscarRepresentante = async () => {
-    if (!busquedaCedula) return;
-    setLoadingRep(true);
-    setError('');
-    setPagoExitoso(null);
-    try {
-      // Recargar tasa al buscar para asegurar frescura
-      if (tasaCambio === 0) {
-          const c = await db.getConfig();
-          setTasaCambio(c.tasaCambio || 0);
-      }
-
-      const rep = await db.getRepresentanteByCedula(busquedaCedula);
-      if (rep) {
-        setRepresentante(rep);
-        const saldoCalc = await db.calcularSaldoPendiente(rep.cedula);
-        setSaldoReal(saldoCalc);
-        if (rep.alumnos.length > 0) setStudentId(rep.alumnos[0].id);
-      } else {
+    // Buscar Representante
+    const buscarRepresentante = async () => {
+        if (!cedulaBusqueda) return;
+        setSearching(true);
         setRepresentante(null);
-        setError('Representante no encontrado');
-      }
-    } catch (e) {
-      setError('Error de conexión');
-    } finally {
-      setLoadingRep(false);
-    }
-  };
-
-  const isMetodoBolivares = (m: MetodoPago) => {
-    return [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.EFECTIVO_BS, MetodoPago.TDD].includes(m);
-  };
-
-  const handleTasaChange = (val: string) => {
-    const nuevaTasa = parseFloat(val);
-    setTasaCambio(isNaN(nuevaTasa) ? 0 : nuevaTasa);
-
-    if (!isNaN(nuevaTasa) && nuevaTasa > 0 && monto) {
-        if (isMetodoBolivares(metodo)) {
-             setMontoBs((parseFloat(monto) * nuevaTasa).toFixed(2));
+        try {
+            const rep = await db.getRepresentanteByCedula(cedulaBusqueda);
+            if (rep) {
+                setRepresentante(rep);
+                // Cargar historial específico
+                const allPagos = await db.getPagos();
+                const repPagos = allPagos.filter(p => p.cedulaRepresentante === rep.cedula);
+                setHistorialPagos(repPagos.sort((a,b) => new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime()));
+            } else {
+                alert("Representante no encontrado");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error buscando datos");
+        } finally {
+            setSearching(false);
         }
-    }
-  };
+    };
 
-  const guardarTasaManual = async () => {
-    if (tasaCambio <= 0) return;
-    setSavingTasa(true);
-    try {
-        await db.saveConfig({ tasaCambio, fechaActualizacion: new Date().toISOString() });
-        alert("Tasa actualizada correctamente en el sistema.");
-    } catch (e) {
-        alert("Error al guardar la tasa.");
-    } finally {
-        setSavingTasa(false);
-    }
-  };
+    // Cálculos de Mensualidad
+    const mensualidadFamiliar = useMemo(() => {
+        if (!representante) return 0;
+        return representante.alumnos.reduce((acc, alu) => {
+            const conf = nivelesConfig.find(n => n.nivel === alu.nivel);
+            return acc + (conf ? conf.precio : (MENSUALIDADES[alu.nivel] || 0));
+        }, 0);
+    }, [representante, nivelesConfig]);
 
-  const handleMontoBsChange = (val: string) => {
-    setMontoBs(val);
-    const valBs = parseFloat(val);
-    if (!isNaN(valBs) && tasaCambio > 0) {
-      setMonto((valBs / tasaCambio).toFixed(2));
-    } else {
-      setMonto('');
-    }
-  };
-
-  const handleMontoUsdChange = (val: string) => {
-    setMonto(val);
-    const valUsd = parseFloat(val);
-    if (isMetodoBolivares(metodo) && !isNaN(valUsd) && tasaCambio > 0) {
-      setMontoBs((valUsd * tasaCambio).toFixed(2));
-    }
-  };
-
-  // Helper para calcular la mensualidad familiar total
-  const calcularMensualidadFamiliar = () => {
-    if (!representante) return 0;
-    return representante.alumnos.reduce((acc, alu) => {
-      const config = nivelesConfig.find(n => n.nivel === alu.nivel);
-      const precio = config ? config.precio : (MENSUALIDADES[alu.nivel] || 0);
-      return acc + precio;
-    }, 0);
-  };
-
-  const calcularDescuentoProntoPago = () => {
-      if (!representante) return 0;
-      // $5 por cada alumno en la matrícula
-      return representante.alumnos.length * 5; 
-  };
-
-  // --- REPORTE DE CIERRE DIARIO ---
-  const generarCierreDiario = async () => {
-    setLoadingReporte(true);
-    try {
-        // 1. Obtener todos los pagos
-        const allPagos = await db.getPagos();
-
-        // 2. Filtrar por la fecha seleccionada en el formulario (fechaOperacion)
-        const pagosDelDia = allPagos.filter(p => 
-            p.fechaPago === fechaOperacion && 
-            p.estado === EstadoPago.VERIFICADO // Solo pagos efectivos/verificados
-        );
-
-        if (pagosDelDia.length === 0) {
-            alert("No hay pagos verificados registrados para la fecha seleccionada.");
-            setLoadingReporte(false);
+    const ejecutarGuardadoPago = async () => {
+        if (!representante || !monto || !referencia) {
+            alert("Complete los datos obligatorios del pago (Monto y Referencia).");
             return;
         }
-
-        // 3. Calcular Totales
-        const resumenMetodos: Record<string, { count: number, totalUSD: number, totalBs: number }> = {};
         
-        pagosDelDia.forEach(p => {
-            if (!resumenMetodos[p.metodoPago]) {
-                resumenMetodos[p.metodoPago] = { count: 0, totalUSD: 0, totalBs: 0 };
-            }
-            resumenMetodos[p.metodoPago].count += 1;
-            resumenMetodos[p.metodoPago].totalUSD += (p.monto || 0);
-            resumenMetodos[p.metodoPago].totalBs += (p.montoBolivares || 0);
-        });
-
-        const totalGeneralUSD = pagosDelDia.reduce((sum, p) => sum + (p.monto || 0), 0);
-        const totalGeneralBs = pagosDelDia.reduce((sum, p) => sum + (p.montoBolivares || 0), 0);
-
-        // 4. Generar PDF
-        const doc = new jsPDF();
-        const logo = await loadImage(LOGO_URL);
-        if (logo) {
-             // Logo en la esquina superior derecha
-             doc.addImage(logo, 'PNG', 170, 10, 25, 25);
-        }
-        
-        // Encabezado
-        doc.setFontSize(18);
-        doc.text("Reporte de Cierre de Caja Diario", 14, 20);
-        
-        doc.setFontSize(11);
-        doc.text(`Fecha de Cierre: ${fechaOperacion}`, 14, 28);
-        doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 34);
-        doc.text(`Total Transacciones: ${pagosDelDia.length}`, 14, 40);
-
-        // --- TABLA RESUMEN ---
-        doc.setFontSize(14);
-        doc.text("Resumen General por Método", 14, 55);
-
-        const bodyResumen = Object.entries(resumenMetodos).map(([metodo, data]) => [
-            metodo,
-            data.count,
-            `$${data.totalUSD.toFixed(2)}`,
-            data.totalBs > 0 ? `Bs. ${data.totalBs.toFixed(2)}` : '-'
-        ]);
-
-        autoTable(doc, {
-            startY: 60,
-            head: [['Método de Pago', 'Cant.', 'Total USD', 'Total Bs']],
-            body: bodyResumen,
-            foot: [['TOTAL GENERAL', pagosDelDia.length, `$${totalGeneralUSD.toFixed(2)}`, `Bs. ${totalGeneralBs.toFixed(2)}`]],
-            theme: 'striped',
-            headStyles: { fillColor: [44, 62, 80] },
-            footStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' }
-        });
-
-        // --- TABLA DETALLADA ---
-        let finalY = (doc as any).lastAutoTable.finalY + 15;
-        doc.text("Detalle de Movimientos", 14, finalY);
-
-        const bodyDetalle = pagosDelDia.map(p => [
-            p.nombreRepresentante.substring(0, 20),
-            p.metodoPago,
-            p.referencia,
-            `${p.mes || '-'} / ${p.formaPago || '-'}`,
-            `$${(p.monto || 0).toFixed(2)}`,
-            p.montoBolivares ? `Bs. ${p.montoBolivares.toFixed(2)}` : '-'
-        ]);
-
-        autoTable(doc, {
-            startY: finalY + 5,
-            head: [['Representante', 'Método', 'Ref', 'Concepto', 'Monto $', 'Monto Bs']],
-            body: bodyDetalle,
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: [100, 100, 100] },
-        });
-
-        const pageHeight = doc.internal.pageSize.height;
-        doc.line(40, pageHeight - 30, 90, pageHeight - 30);
-        doc.text("Cajero / Responsable", 45, pageHeight - 25);
-
-        doc.line(120, pageHeight - 30, 170, pageHeight - 30);
-        doc.text("Administración", 130, pageHeight - 25);
-
-        doc.save(`Cierre_Caja_${fechaOperacion}.pdf`);
-
-    } catch (e) {
-        console.error(e);
-        alert("Error generando el cierre de caja.");
-    } finally {
-        setLoadingReporte(false);
-    }
-  };
-  
-  // --- FUNCIÓN GENERACIÓN RECIBO INDIVIDUAL ---
-  const generarReciboPDF = async (pagoOverride?: RegistroPago, saldoFinalOverride?: number, saldoAnteriorOverride?: number) => {
-    // Usar datos pasados por parámetro (prioridad) o estado actual
-    const elPago = pagoOverride || pagoExitoso;
-    const elSaldoFinal = saldoFinalOverride !== undefined ? saldoFinalOverride : saldoFinalRecibo;
-    const elSaldoAnterior = saldoAnteriorOverride !== undefined ? saldoAnteriorOverride : saldoAnteriorRecibo;
-
-    if (!elPago || !representante) return;
-    
-    try {
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.width;
-        
-        // --- HEADER ---
-        doc.setFillColor(63, 81, 181); // Indigo
-        doc.rect(0, 0, pageWidth, 40, 'F');
-        
-        // Insertar Logo (Izquierda)
-        const logo = await loadImage(LOGO_URL);
-        if (logo) {
-            doc.addImage(logo, 'PNG', 10, 5, 30, 30);
-        }
-
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(22);
-        
-        // Lógica de Título Dinámico
-        const tituloRecibo = elSaldoFinal <= 0 
-            ? "PAGO TOTAL / SOLVENTE" 
-            : "COMPROBANTE DE ABONO";
-
-        doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
-        doc.setFontSize(12);
-        doc.text("AdminPro - Gestión Educativa", pageWidth / 2, 30, { align: 'center' });
-
-        // --- INFO GENERAL ---
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(10);
-        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 50);
-        doc.text(`Fecha Operación: ${elPago.fechaPago}`, 14, 56);
-        doc.text(`Recibo N°: ${elPago.id.substring(0, 8).toUpperCase()}`, 14, 62);
-        
-        doc.setDrawColor(200, 200, 200);
-        doc.line(14, 68, pageWidth - 14, 68);
-        
-        // --- DATOS REPRESENTANTE ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("DATOS DEL REPRESENTANTE", 14, 78);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 86);
-        doc.text(`Cédula: ${representante.cedula}`, 14, 92);
-        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 98);
-
-        // --- DETALLES TRANSACCIÓN ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("DETALLES DE LA TRANSACCIÓN", 14, 113);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-
-        const startY = 123;
-        const col2 = pageWidth / 2;
-
-        doc.text(`Concepto: ${elPago.mes} ${elPago.anio}`, 14, startY);
-        let nombreAlumno = "Todos / Varios";
-        if (elPago.studentId && elPago.studentId !== "VARIOS") {
-            const alumno = representante.alumnos.find(a => a.id === elPago.studentId);
-            if(alumno) nombreAlumno = `${alumno.nombres} ${alumno.apellidos}`;
-        }
-        doc.text(`Estudiante: ${nombreAlumno}`, 14, startY + 8);
-        doc.text(`Método: ${elPago.metodoPago}`, col2, startY);
-        doc.text(`Ref: ${elPago.referencia}`, col2, startY + 8);
-
-        if (elPago.tasaCambioAplicada) {
-            doc.text(`Tasa Cambio: Bs. ${elPago.tasaCambioAplicada.toFixed(2)}`, col2, startY + 16);
-        }
-
-        // --- CAJA FINANCIERA (SALDOS) ---
-        const boxY = 155;
-        doc.setDrawColor(0, 0, 0);
-        doc.setFillColor(245, 247, 250);
-        doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
-
-        doc.setFont("helvetica", "bold");
-        doc.text("ESTADO DE CUENTA", 20, boxY + 10);
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "normal");
-        
-        // Saldo Anterior
-        const textoSaldoAnt = elSaldoAnterior > 0 ? "Saldo Anterior (Pendiente):" : "Saldo Anterior (Crédito):";
-        doc.text(textoSaldoAnt, 20, boxY + 20);
-        const valorAntStr = `$${Math.abs(elSaldoAnterior).toFixed(2)} ${elSaldoAnterior < 0 ? '(Crédito)' : ''}`;
-        doc.text(valorAntStr, pageWidth - 30, boxY + 20, { align: 'right' });
-
-        // Monto Pagado
-        doc.text("Monto Cancelado (-):", 20, boxY + 28);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(0, 100, 0); // Verde oscuro
-        doc.text(`$${(elPago.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
-        doc.setTextColor(0);
-        
-        if (elPago.montoBolivares) {
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(9);
-            doc.setTextColor(100);
-            doc.text(`(Bs. ${elPago.montoBolivares.toFixed(2)})`, pageWidth - 30, boxY + 33, { align: 'right' });
-            doc.setTextColor(0);
-            doc.setFontSize(11);
-        }
-
-        doc.setDrawColor(200);
-        doc.line(20, boxY + 38, pageWidth - 20, boxY + 38);
-
-        // Saldo Final
-        doc.setFont("helvetica", "bold");
-        let labelFinal = "SALDO RESTANTE (DEUDOR):";
-        if (elSaldoFinal <= 0) labelFinal = "SALDO A FAVOR / CRÉDITO:";
-        doc.text(labelFinal, 20, boxY + 45);
-        
-        if (elSaldoFinal > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
-        else doc.setTextColor(0, 150, 0); // Verde si está a favor
-        
-        doc.text(`$${Math.abs(elSaldoFinal).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
-
-        // --- PIE ---
-        doc.setTextColor(0);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: ${elPago.estado.toUpperCase()}`, 14, 230);
-        
-        if (elPago.observaciones) {
-            doc.setFontSize(9);
-            doc.text(`Obs: ${elPago.observaciones}`, 14, 236);
-        }
-
-        doc.save(`Recibo_${elPago.cedulaRepresentante}_${elPago.id.substring(0,4)}.pdf`);
-    } catch (e) {
-        console.error(e);
-        alert("Error al generar el PDF.");
-    }
-  };
-
-  // --- FUNCIÓN DE GUARDADO (EXTRAÍDA) ---
-  const ejecutarGuardadoPago = async () => {
-    if (!representante) return;
-    
-    setLoading(true);
-    setShowDuplicateModal(false);
-
-    try {
-      const montoNum = parseFloat(monto);
-      
-      // 2. LÓGICA DE ESTADO Y CONSTRUCCIÓN DE OBJETO
-      const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
-      const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
-      
-      let nombreEstudiante = "VARIOS";
-      if (studentId && studentId !== "VARIOS") {
-          const est = representante.alumnos.find(a => a.id === studentId);
-          if(est) nombreEstudiante = `${est.nombres} ${est.apellidos}`;
-      }
-
-      let obsFinal = observaciones;
-      if (nombreEstudiante !== "VARIOS" && !obsFinal) {
-          obsFinal = `Pago de ${nombreEstudiante}`;
-      }
-      if (aplicarProntoPago) {
-          const descuento = calcularDescuentoProntoPago();
-          obsFinal += ` [PRONTO PAGO APLICADO: -$${descuento}]`;
-      }
-
-      const nuevoSaldo = saldoReal - montoNum;
-      
-      setSaldoAnteriorRecibo(saldoReal);
-      setSaldoFinalRecibo(nuevoSaldo);
-
-      const etiquetaFormaPago = nuevoSaldo <= 0 ? 'Cancelación / Adelanto' : 'Abono';
-
-      const nuevoPago: RegistroPago = {
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        fechaRegistro: new Date().toISOString().split('T')[0],
-        fechaPago: fechaOperacion,
-        cedulaRepresentante: representante.cedula,
-        nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
-        matricula: representante.matricula,
-        studentId: studentId,
-        mes: mesPago,
-        anio: anioPago,
-        formaPago: etiquetaFormaPago,
-        metodoPago: metodo,
-        referencia,
-        monto: montoNum,
-        montoBolivares: isMetodoBolivares(metodo) && montoBs ? parseFloat(montoBs) : undefined,
-        tasaCambioAplicada: isMetodoBolivares(metodo) ? tasaCambio : undefined,
-        observaciones: obsFinal,
-        estado: estadoInicial
-      };
-
-      await db.savePago(nuevoPago);
-      
-      setPagoExitoso(nuevoPago);
-      setMonto('');
-      setMontoBs('');
-      setReferencia('');
-      setObservaciones('');
-      setSaldoReal(nuevoSaldo);
-
-      // --- GENERAR RECIBO AUTOMÁTICO SIEMPRE ---
-      // Se genera el recibo independientemente si es Abono o Total
-      await generarReciboPDF(nuevoPago, nuevoSaldo, saldoReal);
-      
-    } catch (e) {
-      console.error(e);
-      alert("Error procesando el pago. Verifique conexión.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const procesarPago = async () => {
-    if (!representante || !monto || !referencia) {
-      setError('Complete todos los campos del pago');
-      return;
-    }
-
-    const montoNum = parseFloat(monto);
-    if (isNaN(montoNum) || montoNum <= 0) {
-      setError('Monto inválido');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // 1. VERIFICACIÓN DE DUPLICADOS
-      const historialPagos = await db.getPagos();
-      const posibleDuplicado = historialPagos.find(p => 
-          p.cedulaRepresentante === representante.cedula &&
-          p.referencia.trim().toUpperCase() === referencia.trim().toUpperCase() &&
-          Math.abs(p.monto - montoNum) < 0.01 
-      );
-
-      if (posibleDuplicado) {
-          setLoading(false); 
-          setShowDuplicateModal(true); // Mostrar Modal
-          return;
-      }
-
-      // Si no es duplicado, guardar directo
-      await ejecutarGuardadoPago();
-      
-    } catch (e) {
-      console.error(e);
-      alert("Error en validación previa. Verifique conexión.");
-      setLoading(false);
-    }
-  };
-
-  // --- VISTA: FORMULARIO PAGO (DEFAULT) ---
-  const mensualidadFamiliar = calcularMensualidadFamiliar();
-  const descuentoProntoPago = calcularDescuentoProntoPago();
-  
-  const deudaVencida = Math.max(0, saldoReal - mensualidadFamiliar);
-  const deudaMesActual = saldoReal > 0 ? Math.min(saldoReal, mensualidadFamiliar) : 0;
-
-  return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <DollarSign className="text-green-600" /> Caja / Registrar Pago
-          </h2>
-          
-          <div className="flex gap-2">
-            {/* BOTÓN CIERRE DE CAJA */}
-            <button 
-                onClick={generarCierreDiario}
-                disabled={loadingReporte}
-                className="flex items-center gap-2 bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-800 transition-colors shadow-sm"
-                title="Generar PDF con cierre del día seleccionado"
-            >
-                {loadingReporte ? <Loader2 size={16} className="animate-spin" /> : <FileBarChart size={16} />}
-                Cierre Caja
-            </button>
-
-            <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-lg shadow-sm">
-                <span className="text-xs font-bold text-gray-500 pl-2">Tasa BCV:</span>
-                <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">Bs.</span>
-                    <input
-                        type="number"
-                        value={tasaCambio}
-                        onChange={(e) => handleTasaChange(e.target.value)}
-                        className="w-24 pl-8 pr-2 py-1 border border-indigo-100 rounded bg-indigo-50 text-indigo-700 font-bold text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                        placeholder="0.00"
-                    />
-                </div>
-                <button 
-                    onClick={guardarTasaManual} 
-                    disabled={savingTasa}
-                    className="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
-                >
-                    {savingTasa ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                </button>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex gap-4">
-          <input
-            type="text"
-            placeholder="Buscar por Cédula"
-            value={busquedaCedula}
-            onChange={(e) => setBusquedaCedula(e.target.value)}
-            className="flex-1 border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          <button 
-            onClick={buscarRepresentante}
-            disabled={loadingRep}
-            className="bg-slate-800 text-white px-6 rounded-lg hover:bg-slate-700 flex items-center justify-center min-w-[80px]"
-          >
-            {loadingRep ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
-          </button>
-        </div>
-        {error && <p className="text-red-500 mt-2 text-sm">{error}</p>}
-      </div>
-
-      {representante && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-1">
-            <h3 className="font-bold text-lg mb-4 text-slate-700">Ficha Financiera</h3>
-            <div className="space-y-3 text-sm">
-              <p><span className="font-semibold">Rep:</span> {representante.nombres} {representante.apellidos}</p>
-              <p><span className="font-semibold">Cédula:</span> {representante.cedula}</p>
-              <p><span className="font-semibold">Matrícula:</span> <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded text-xs">{representante.matricula}</span></p>
-              
-              <div className="border-t pt-3 mt-3">
-                <p className="font-semibold mb-2">Alumnos:</p>
-                {representante.alumnos.map((a, i) => (
-                  <div key={i} className="mb-2 pl-2 border-l-2 border-indigo-200">
-                    <p>{a.nombres} {a.apellidos}</p>
-                    <p className="text-xs text-gray-500">{a.nivel} - Sec {a.seccion}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* TARJETA DE SALDO REAL */}
-              <div className={`mt-6 p-4 rounded-lg border shadow-sm ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-                <p className={`text-xs uppercase font-bold tracking-wider mb-1 flex items-center gap-1 ${saldoReal > 0 ? 'text-orange-800' : 'text-green-800'}`}>
-                   {saldoReal > 0 ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                   {saldoReal > 0 ? 'Total a Pagar (Hoy)' : 'Saldo a Favor (Crédito)'}
-                </p>
-                
-                <div className="flex flex-col mb-2">
-                  <span className={`text-3xl font-bold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-                    ${Math.abs(saldoReal).toFixed(2)}
-                  </span>
-                  <span className={`text-sm font-medium ${saldoReal > 0 ? 'text-orange-400' : 'text-green-500'}`}>
-                    ~ Bs. {Math.abs(saldoReal * (tasaCambio || 0)).toFixed(2)}
-                  </span>
-                </div>
-
-                {/* DESGLOSE EXACTO: MES ACTUAL + ATRASOS */}
-                {saldoReal > 0 && (
-                  <div className="mt-3 bg-white/60 p-2 rounded text-xs text-gray-700 border border-gray-100">
-                     <div className="flex justify-between items-center mb-1 border-b border-gray-200 pb-1">
-                        <span className="flex items-center gap-1"><Calendar size={10} /> Mes en Curso:</span>
-                        <span className="font-bold">${deudaMesActual.toFixed(2)}</span>
-                     </div>
-                     <div className="flex justify-between items-center pt-1 text-red-600">
-                        <span className="flex items-center gap-1"><Clock size={10} /> Atrasos Vencidos:</span>
-                        <span className="font-bold">${deudaVencida.toFixed(2)}</span>
-                     </div>
-                  </div>
-                )}
-
-                {saldoReal <= 0 && (
-                  <div className="mt-2 text-[10px] text-green-700 leading-tight">
-                    * El representante se encuentra solvente al día de hoy.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-slate-700">Registrar Nueva Transacción</h3>
-                
-                {/* BOTÓN DESCARGA ÚLTIMO PAGO */}
-                {pagoExitoso && (
-                    <button 
-                        onClick={() => generarReciboPDF()}
-                        className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold border border-indigo-200 hover:bg-indigo-200 transition-colors animate-in fade-in slide-in-from-right-5"
-                    >
-                        <Printer size={16} /> Descargar Recibo (Último Pago)
-                    </button>
-                )}
-            </div>
+        setLoading(true);
+        try {
+            const montoNum = parseFloat(monto);
+            const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.TDD].includes(metodo);
+            const montoBs = esPagoBs ? (montoNum * tasaCambio) : undefined;
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 bg-indigo-50 p-4 rounded-lg">
-                <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Estudiante</label>
-                   <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
-                      <option value="VARIOS">VARIOS / TODOS</option>
-                      {representante.alumnos.map(alu => (
-                        <option key={alu.id} value={alu.id}>{alu.nombres}</option>
-                      ))}
-                   </select>
+            // Lógica de verificación automática vs manual
+            const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
+            const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
+
+            const nuevoPago: RegistroPago = {
+                id: crypto.randomUUID(),
+                timestamp: new Date().toISOString(),
+                fechaRegistro: new Date().toISOString().split('T')[0],
+                fechaPago: new Date().toISOString().split('T')[0],
+                cedulaRepresentante: representante.cedula,
+                nombreRepresentante: `${representante.nombres} ${representante.apellidos}`,
+                matricula: representante.matricula,
+                studentId: 'VARIOS',
+                mes: conceptoMes || 'Abono',
+                anio: ANIO_ESCOLAR_ACTUAL,
+                formaPago: 'Abono',
+                metodoPago: metodo,
+                referencia: referencia,
+                monto: montoNum,
+                montoBolivares: montoBs,
+                observaciones: observacion,
+                estado: estadoInicial
+            };
+
+            await db.savePago(nuevoPago);
+            
+            setHistorialPagos([nuevoPago, ...historialPagos]);
+            setMonto('');
+            setReferencia('');
+            setObservacion('');
+            setConceptoMes('');
+            
+            alert(`Pago registrado con éxito. Estado: ${estadoInicial}`);
+            
+            if (estadoInicial === EstadoPago.VERIFICADO) {
+                 if(window.confirm("¿Desea descargar el recibo ahora?")) {
+                     generarRecibo(nuevoPago);
+                 }
+            }
+
+        } catch (e) {
+            console.error(e);
+            alert("Error guardando pago en el sistema.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const generarRecibo = async (pago: RegistroPago) => {
+        if (!representante) return;
+        const doc = new jsPDF();
+        const logo = await loadImage(LOGO_URL);
+        if (logo) doc.addImage(logo, 'PNG', 10, 10, 25, 25);
+        
+        doc.setFontSize(16);
+        doc.text("RECIBO DE PAGO", 105, 20, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text(`N° Control: ${pago.id.substring(0,8)}`, 105, 26, { align: 'center' });
+
+        doc.text(`Fecha: ${pago.fechaPago}`, 15, 40);
+        doc.text(`Representante: ${pago.nombreRepresentante}`, 15, 46);
+        doc.text(`Cédula: ${pago.cedulaRepresentante}`, 15, 52);
+
+        doc.text(`Concepto: ${pago.mes} ${pago.anio}`, 15, 65);
+        doc.text(`Método: ${pago.metodoPago}`, 15, 71);
+        doc.text(`Referencia: ${pago.referencia}`, 15, 77);
+
+        doc.setFontSize(14);
+        doc.text(`Monto: $${(pago.monto || 0).toFixed(2)}`, 15, 90);
+        if (pago.montoBolivares) {
+            doc.text(`(Bs. ${pago.montoBolivares.toFixed(2)})`, 60, 90);
+        }
+
+        doc.save(`Recibo_${pago.id.substring(0,8)}.pdf`);
+    };
+
+    return (
+        <div className="max-w-5xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h2 className="text-2xl font-bold mb-6 text-slate-800 flex items-center gap-2">
+                  <CreditCard className="text-indigo-600" /> Registro de Pagos (Caja)
+                </h2>
+
+                <div className="flex gap-4 mb-6">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                        <input 
+                            type="text" 
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Buscar por Cédula del Representante..."
+                            value={cedulaBusqueda}
+                            onChange={(e) => setCedulaBusqueda(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && buscarRepresentante()}
+                        />
+                    </div>
+                    <button 
+                        onClick={buscarRepresentante}
+                        disabled={searching}
+                        className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {searching ? <Loader2 className="animate-spin" /> : 'Buscar'}
+                    </button>
                 </div>
-                <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Mes a Imputar</label>
-                   <select value={mesPago} onChange={(e) => setMesPago(e.target.value)} className="w-full text-sm border-gray-300 rounded p-1.5">
-                      {meses.map(m => <option key={m} value={m}>{m}</option>)}
-                   </select>
-                </div>
-                <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Año Escolar</label>
-                   <input 
-                    type="text" 
-                    value={anioPago} 
-                    onChange={(e) => setAnioPago(e.target.value)} 
-                    className="w-full text-sm border-gray-300 rounded p-1.5" 
-                    placeholder="Ej: 2025-26"
-                   />
-                </div>
-                <div>
-                   <label className="block text-xs font-bold text-indigo-700 mb-1">Fecha Operación</label>
-                   <input 
-                    type="date" 
-                    value={fechaOperacion} 
-                    onChange={(e) => setFechaOperacion(e.target.value)} 
-                    className="w-full text-sm border-gray-300 rounded p-1.5" 
-                   />
-                </div>
+
+                {representante && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
+                        <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                            <h3 className="font-bold text-lg text-slate-700 mb-4">{representante.nombres} {representante.apellidos}</h3>
+                            <div className="space-y-2 text-sm text-gray-600">
+                                <p><strong>Cédula:</strong> {representante.cedula}</p>
+                                <p><strong>Matrícula:</strong> {representante.matricula}</p>
+                                <p><strong>Alumnos:</strong> {representante.alumnos.length}</p>
+                                <ul className="pl-4 list-disc text-xs text-gray-500 mt-2">
+                                    {representante.alumnos.map((a, idx) => (
+                                        <li key={idx}>{a.nombres} - {a.nivel}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div className="bg-indigo-50 p-6 rounded-lg border border-indigo-100 flex flex-col justify-center items-center text-center">
+                            <p className="text-sm font-bold text-indigo-800 uppercase tracking-wide">Saldo Estimado (Deuda)</p>
+                            <h3 className={`text-4xl font-extrabold my-2 ${saldoReal > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                ${Math.abs(saldoReal).toFixed(2)}
+                            </h3>
+                            <p className="text-xs text-indigo-600 font-medium">
+                                {saldoReal > 0 ? 'Pendiente por Pagar' : 'Solvente / A Favor'}
+                            </p>
+                            <div className="mt-4 text-xs text-gray-500">
+                                Mensualidad Total Familiar: <strong>${mensualidadFamiliar.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* SECCIÓN PRONTO PAGO */}
-            <div className="mb-4">
-               <div className="flex items-center gap-2 mb-2">
-                   <input 
-                    type="checkbox" 
-                    id="chkProntoPago"
-                    checked={aplicarProntoPago}
-                    onChange={(e) => setAplicarProntoPago(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                   />
-                   <label htmlFor="chkProntoPago" className="text-sm font-bold text-gray-700 flex items-center gap-2 select-none cursor-pointer">
-                      <Tag size={16} className={`text-${aplicarProntoPago ? 'green' : 'gray'}-600`} /> 
-                      Aplicar Descuento Pronto Pago (-$5/alumno)
-                   </label>
-               </div>
-               {aplicarProntoPago ? (
-                   <p className="text-xs text-green-600 pl-6">
-                       <span className="font-bold">¡ACTIVO!</span> Se descontarán <b>${descuentoProntoPago}</b> del saldo si elige pagar el "Total". 
-                       (Fecha válida: Día &le; 25).
-                   </p>
-               ) : (
-                   <p className="text-xs text-gray-400 pl-6">
-                       Descuento no disponible para la fecha seleccionada (Día {parseInt(fechaOperacion.split('-')[2])}).
-                   </p>
-               )}
-            </div>
+            {representante && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                     <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+                        <DollarSign className="text-green-600" /> Registrar Nuevo Pago
+                     </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
-                <select 
-                  value={metodo}
-                  onChange={(e) => {
-                    setMetodo(e.target.value as MetodoPago);
-                    setMonto('');
-                    setMontoBs('');
-                  }}
-                  className="w-full border border-gray-300 rounded-md p-2"
-                >
-                  {Object.values(MetodoPago).map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-               </div>
-               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo Transacción</label>
-                <div className="flex gap-2 mt-1">
-                  <button 
-                    onClick={() => {
-                        setFormaPago('Abono');
-                        setMonto('');
-                        setMontoBs('');
-                    }}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
-                        formaPago === 'Abono' 
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-200' 
-                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <CreditCard size={16} /> Abono
-                  </button>
-                  <button 
-                    onClick={() => {
-                        setFormaPago('Total');
-                        if(saldoReal > 0) {
-                            const montoFinal = aplicarProntoPago 
-                                ? Math.max(0, saldoReal - descuentoProntoPago) 
-                                : saldoReal;
-                            handleMontoUsdChange(montoFinal.toString());
-                        }
-                    }}
-                    disabled={saldoReal <= 0}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all flex items-center justify-center gap-2 ${
-                        formaPago === 'Total' 
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md ring-2 ring-indigo-200' 
-                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                    } ${saldoReal <= 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <CheckCircle size={16} /> Total
-                  </button>
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                         <div>
+                             <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
+                             <select 
+                                className="w-full border border-gray-300 rounded-lg p-3"
+                                value={metodo}
+                                onChange={(e) => setMetodo(e.target.value as MetodoPago)}
+                             >
+                                 {Object.values(MetodoPago).map(m => <option key={m} value={m}>{m}</option>)}
+                             </select>
+                         </div>
+                         <div>
+                             <label className="block text-sm font-medium text-gray-700 mb-1">Referencia / Nro. Comprobante</label>
+                             <input 
+                                type="text"
+                                className="w-full border border-gray-300 rounded-lg p-3"
+                                placeholder="Ej: 123456"
+                                value={referencia}
+                                onChange={(e) => setReferencia(e.target.value)}
+                             />
+                         </div>
+                         <div>
+                             <label className="block text-sm font-medium text-gray-700 mb-1">Monto (USD)</label>
+                             <input 
+                                type="number"
+                                className="w-full border border-gray-300 rounded-lg p-3 font-bold text-gray-800"
+                                placeholder="0.00"
+                                value={monto}
+                                onChange={(e) => setMonto(e.target.value)}
+                             />
+                             {tasaCambio > 0 && monto && (
+                                 <p className="text-xs text-green-700 mt-1 font-mono">
+                                     Ref: Bs. {(parseFloat(monto) * tasaCambio).toFixed(2)}
+                                 </p>
+                             )}
+                         </div>
+                         <div>
+                             <label className="block text-sm font-medium text-gray-700 mb-1">Concepto (Mes/Motivo)</label>
+                             <input 
+                                type="text"
+                                className="w-full border border-gray-300 rounded-lg p-3"
+                                placeholder="Ej: Octubre"
+                                value={conceptoMes}
+                                onChange={(e) => setConceptoMes(e.target.value)}
+                             />
+                         </div>
+                         <div className="md:col-span-2">
+                             <label className="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
+                             <input 
+                                type="text"
+                                className="w-full border border-gray-300 rounded-lg p-3"
+                                placeholder="Opcional..."
+                                value={observacion}
+                                onChange={(e) => setObservacion(e.target.value)}
+                             />
+                         </div>
+                     </div>
+
+                     <div className="mt-8 flex justify-end">
+                         <button 
+                            onClick={ejecutarGuardadoPago}
+                            disabled={loading}
+                            className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 shadow-lg flex items-center gap-2"
+                         >
+                             {loading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
+                             Procesar Pago
+                         </button>
+                     </div>
                 </div>
-               </div>
-            </div>
+            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-              {isMetodoBolivares(metodo) && (
-                <div>
-                  <label className="block text-sm font-bold text-indigo-700 mb-1 flex items-center gap-1">
-                     Monto en Bolívares (Bs)
-                  </label>
-                  <input 
-                    type="number" 
-                    value={montoBs}
-                    onChange={(e) => handleMontoBsChange(e.target.value)}
-                    className="w-full border border-indigo-300 rounded-md p-2 font-mono"
-                    placeholder="0.00"
-                  />
+            {historialPagos.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-4 border-b border-gray-100 bg-gray-50">
+                        <h3 className="font-bold text-gray-700">Historial de Transacciones (Recientes)</h3>
+                    </div>
+                    <div className="overflow-x-auto max-h-[400px]">
+                        <table className="w-full text-sm text-left text-gray-500">
+                            <thead className="bg-gray-100 text-xs text-gray-700 uppercase sticky top-0">
+                                <tr>
+                                    <th className="px-6 py-3">Fecha</th>
+                                    <th className="px-6 py-3">Concepto</th>
+                                    <th className="px-6 py-3">Método / Ref</th>
+                                    <th className="px-6 py-3 text-right">Monto</th>
+                                    <th className="px-6 py-3 text-center">Estado</th>
+                                    <th className="px-6 py-3 text-center">Recibo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {historialPagos.map(p => (
+                                    <tr key={p.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4">{p.fechaPago}</td>
+                                        <td className="px-6 py-4">{p.mes}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="font-bold">{p.metodoPago}</div>
+                                            <div className="text-xs text-gray-400">{p.referencia}</div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-bold text-gray-800">${(p.monto || 0).toFixed(2)}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold ${
+                                                p.estado === EstadoPago.VERIFICADO ? 'bg-green-100 text-green-700' :
+                                                p.estado === EstadoPago.RECHAZADO ? 'bg-red-100 text-red-700' :
+                                                'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {p.estado}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            {p.estado === EstadoPago.VERIFICADO && (
+                                                <button onClick={() => generarRecibo(p)} className="text-gray-500 hover:text-indigo-600">
+                                                    <Printer size={18} />
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-              )}
-              
-              <div className={!isMetodoBolivares(metodo) ? "md:col-span-2" : ""}>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
-                  Monto a Registrar ($ USD)
-                </label>
-                <input 
-                  type="number" 
-                  value={monto}
-                  onChange={(e) => handleMontoUsdChange(e.target.value)}
-                  readOnly={isMetodoBolivares(metodo) && formaPago === 'Abono' && montoBs !== ''}
-                  className={`w-full border border-gray-300 rounded-md p-2 font-mono text-lg ${isMetodoBolivares(metodo) ? 'bg-gray-100 text-gray-600' : 'bg-white'}`}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Referencia / Comprobante</label>
-              <input 
-                type="text" 
-                value={referencia}
-                onChange={(e) => setReferencia(e.target.value)}
-                className="w-full border border-gray-300 rounded-md p-2"
-                placeholder="Ej: 12345678"
-              />
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
-              <textarea 
-                value={observaciones}
-                onChange={(e) => setObservaciones(e.target.value)}
-                className="w-full border border-gray-300 rounded-md p-2 h-20"
-              ></textarea>
-            </div>
-
-            <button 
-              onClick={procesarPago}
-              disabled={loading}
-              className={`w-full bg-slate-800 text-white py-3 rounded-lg hover:bg-slate-700 font-bold flex justify-center items-center gap-2 shadow-md ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {loading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
-              {loading ? 'Procesando...' : 'Registrar Operación'}
-            </button>
-          </div>
+            )}
         </div>
-      )}
-
-      {/* Modal de Alerta de Duplicado */}
-      {showDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in duration-200">
-               <div className="bg-orange-50 p-6 border-b border-orange-100 flex items-center gap-4">
-                  <div className="bg-orange-100 p-2 rounded-full">
-                     <AlertTriangle className="text-orange-600" size={32} />
-                  </div>
-                  <div>
-                      <h3 className="text-lg font-bold text-orange-800">Posible Pago Duplicado</h3>
-                      <p className="text-sm text-orange-700">Ya existe una transacción similar.</p>
-                  </div>
-               </div>
-               
-               <div className="p-6 space-y-4">
-                  <p className="text-gray-600 text-sm">
-                    El sistema ha detectado que la referencia <b>{referencia}</b> ya fue registrada para este representante con el mismo monto.
-                  </p>
-                  <div className="bg-gray-50 p-4 rounded-lg text-sm border border-gray-200">
-                      <div className="flex justify-between mb-2">
-                          <span className="text-gray-500">Referencia:</span>
-                          <span className="font-mono font-bold text-gray-800">{referencia}</span>
-                      </div>
-                      <div className="flex justify-between">
-                          <span className="text-gray-500">Monto:</span>
-                          <span className="font-mono font-bold text-gray-800">${parseFloat(monto).toFixed(2)}</span>
-                      </div>
-                  </div>
-                  <p className="text-xs text-gray-500 italic">
-                    ¿Desea registrar este pago de todas formas? (Podría generar inconsistencias).
-                  </p>
-               </div>
-
-               <div className="p-4 bg-gray-50 flex gap-3 border-t border-gray-100">
-                   <button 
-                     onClick={() => { setShowDuplicateModal(false); setLoading(false); }}
-                     className="flex-1 bg-white text-gray-700 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium"
-                   >
-                     Cancelar
-                   </button>
-                   <button 
-                     onClick={ejecutarGuardadoPago}
-                     disabled={loading}
-                     className="flex-1 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 font-bold flex justify-center items-center gap-2"
-                   >
-                     {loading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                     Registrar Duplicado
-                   </button>
-               </div>
-           </div>
-        </div>
-      )}
-    </div>
-  );
+    );
 };

@@ -3,12 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, Scale } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo } from '../types';
+import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo, PagoServicio, RegistroNomina, MovimientoInventario, TipoMovimiento } from '../types';
 import { MENSUALIDADES, LOGO_URL } from '../constants';
 
-type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA';
+type TipoReporte = 'TRANSACCIONES' | 'SOLVENCIA' | 'BALANCE';
 
 // Interfaces para el detalle
 interface DetalleAlumnoDeuda {
@@ -30,6 +30,16 @@ interface DeudaCalculada {
   saldoPendiente: number;
   esMoroso: boolean;
   detallesAlumnos: DetalleAlumnoDeuda[];
+}
+
+interface BalanceData {
+    ingresosRepresentantes: number;
+    egresosServicios: number;
+    egresosNomina: number;
+    egresosCompras: number;
+    totalIngresos: number;
+    totalEgresos: number;
+    resultadoNeto: number;
 }
 
 // Helper
@@ -60,17 +70,27 @@ export const Reportes: React.FC = () => {
   const [representantes, setRepresentantes] = useState<Representante[]>([]);
   const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
   const [solvencias, setSolvencias] = useState<DeudaCalculada[]>([]);
+  
+  // Datos para Balance
+  const [pagosServicios, setPagosServicios] = useState<PagoServicio[]>([]);
+  const [nominaHistory, setNominaHistory] = useState<RegistroNomina[]>([]);
+  const [movimientosInv, setMovimientosInv] = useState<MovimientoInventario[]>([]);
 
   // Filtros
   const [tipoReporte, setTipoReporte] = useState<TipoReporte>('TRANSACCIONES');
   const [filtroCedula, setFiltroCedula] = useState('');
-  const [filtroFechaInicio, setFiltroFechaInicio] = useState('');
-  const [filtroFechaFin, setFiltroFechaFin] = useState('');
-  const [filtroVerificacion, setFiltroVerificacion] = useState('TODOS'); // TODOS, VERIFICADO, PENDIENTE
   
-  // Filtros Solvencia
-  const [filtroEstadoSolvencia, setFiltroEstadoSolvencia] = useState('TODOS'); // TODOS, MOROSO, SOLVENTE
-  const [filtroNivel, setFiltroNivel] = useState('TODOS'); // Mapea a 'Grado'
+  // Fechas (Default: Mes Actual)
+  const date = new Date();
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
+
+  const [filtroFechaInicio, setFiltroFechaInicio] = useState(firstDay);
+  const [filtroFechaFin, setFiltroFechaFin] = useState(lastDay);
+  
+  const [filtroVerificacion, setFiltroVerificacion] = useState('TODOS'); 
+  const [filtroEstadoSolvencia, setFiltroEstadoSolvencia] = useState('TODOS'); 
+  const [filtroNivel, setFiltroNivel] = useState('TODOS');
   const [filtroSeccion, setFiltroSeccion] = useState('');
 
   // UI
@@ -88,16 +108,22 @@ export const Reportes: React.FC = () => {
   const cargarDatosGenerales = async () => {
     setLoading(true);
     try {
-      const [pData, rData, nData] = await Promise.all([
+      const [pData, rData, nData, sData, nomData, invData] = await Promise.all([
         db.getPagos(),
         db.getRepresentantes(),
-        db.getNiveles()
+        db.getNiveles(),
+        db.getPagosServicios(),
+        db.getNominaHistory(),
+        db.getInventarioData()
       ]);
+      
       setPagos(pData);
       setRepresentantes(rData);
       setNivelesConfig(nData);
+      setPagosServicios(sData);
+      setNominaHistory(nomData);
+      setMovimientosInv(invData.movimientos);
       
-      // Calcular solvencias una vez cargados los datos
       calcularSolvencias(rData, pData, nData);
     } catch (e) {
       console.error(e);
@@ -124,16 +150,13 @@ export const Reportes: React.FC = () => {
     const resultados: DeudaCalculada[] = reps.map(rep => {
       let deudaEsperadaTotal = 0;
       
-      // 1. Inicializar detalle por cada alumno con pagos específicos
       const detallesAlumnos: DetalleAlumnoDeuda[] = rep.alumnos.map(alu => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
         const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
         
-        // Costo acumulado hasta la fecha
         const costoTotalAlumno = precioMensual * mesesTranscurridos;
         deudaEsperadaTotal += costoTotalAlumno;
 
-        // Pagos específicos de este alumno (studentId coincide)
         const pagosEspecificos = _pagos
           .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && p.studentId === alu.id)
           .reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -148,13 +171,10 @@ export const Reportes: React.FC = () => {
         };
       });
 
-      // 2. Obtener Bolsa General de Pagos (Sin studentId o 'VARIOS')
       let bolsaGeneral = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && (!p.studentId || p.studentId === 'VARIOS'))
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
-      // 3. Distribuir Bolsa General para cubrir deudas individuales
-      // Estrategia: Llenar huecos de deuda con la bolsa general
       detallesAlumnos.forEach(detalle => {
          if (bolsaGeneral > 0) {
              const deudaActual = detalle.pendiente;
@@ -167,18 +187,14 @@ export const Reportes: React.FC = () => {
          }
       });
 
-      // 4. Si sobra dinero en la bolsa (crédito), asignarlo al primer alumno para visualización
       if (bolsaGeneral > 0 && detallesAlumnos.length > 0) {
           detallesAlumnos[0].pagado += bolsaGeneral;
-          // Pendiente se mantiene en 0
       }
 
-      // Total Pagado Global (Para consistencia)
       const totalPagadoRep = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
-      // El saldo pendiente global
       const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
 
       return {
@@ -195,6 +211,43 @@ export const Reportes: React.FC = () => {
     });
 
     setSolvencias(resultados);
+  };
+
+  const getBalanceData = (): BalanceData => {
+      const start = filtroFechaInicio;
+      const end = filtroFechaFin;
+
+      // 1. Ingresos (Pagos Representantes Verificados)
+      const ingresosRep = pagos
+          .filter(p => p.estado === EstadoPago.VERIFICADO && p.fechaRegistro >= start && p.fechaRegistro <= end)
+          .reduce((acc, p) => acc + (p.monto || 0), 0);
+
+      // 2. Egresos Servicios
+      const egresosServ = pagosServicios
+          .filter(p => p.estado === 'PAGADO' && p.fechaPago >= start && p.fechaPago <= end)
+          .reduce((acc, p) => acc + (p.monto || 0), 0);
+
+      // 3. Egresos Nomina
+      const egresosNom = nominaHistory
+          .filter(n => n.fechaPago >= start && n.fechaPago <= end)
+          .reduce((acc, n) => acc + (n.totalPagar || 0), 0);
+
+      // 4. Egresos Compras (Movimientos de Entrada con Costo)
+      const egresosComp = movimientosInv
+          .filter(m => m.tipo === TipoMovimiento.ENTRADA && m.fecha >= start && m.fecha <= end)
+          .reduce((acc, m) => acc + (m.costoTotal || 0), 0);
+
+      const totalEgresos = egresosServ + egresosNom + egresosComp;
+
+      return {
+          ingresosRepresentantes: ingresosRep,
+          egresosServicios: egresosServ,
+          egresosNomina: egresosNom,
+          egresosCompras: egresosComp,
+          totalIngresos: ingresosRep,
+          totalEgresos: totalEgresos,
+          resultadoNeto: ingresosRep - totalEgresos
+      };
   };
 
   const toggleRow = (cedula: string) => {
@@ -219,8 +272,7 @@ export const Reportes: React.FC = () => {
 
         return cumpleCedula && cumpleEstado && cumpleFecha;
       }).sort((a,b) => new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime());
-    } else {
-      // SOLVENCIA
+    } else if (tipoReporte === 'SOLVENCIA') {
       return solvencias.filter(s => {
         const cumpleCedula = filtroCedula ? s.cedula.includes(filtroCedula) : true;
         const cumpleEstado = filtroEstadoSolvencia === 'TODOS'
@@ -229,7 +281,6 @@ export const Reportes: React.FC = () => {
           
         let cumpleNivel = true;
         if (filtroNivel !== 'TODOS') {
-            // Si alguno de los hijos está en el nivel filtrado, mostramos al representante
             cumpleNivel = s.detallesAlumnos.some(alu => alu.nivel === filtroNivel);
         }
 
@@ -240,6 +291,8 @@ export const Reportes: React.FC = () => {
 
         return cumpleCedula && cumpleEstado && cumpleNivel && cumpleSeccion;
       });
+    } else {
+        return []; // Balance se calcula directo
     }
   };
 
@@ -247,35 +300,83 @@ export const Reportes: React.FC = () => {
     setDownloading(true);
     try {
       const doc = new jsPDF();
-      const datos = obtenerDatosFiltrados();
-      
-      // Logo en la esquina derecha
       const logo = await loadImage(LOGO_URL);
       if (logo) {
           doc.addImage(logo, 'PNG', 170, 10, 25, 25);
       }
 
-      // Encabezado
       doc.setFontSize(18);
       doc.text('Sistema de Gestión Administrativa', 14, 20);
-      doc.setFontSize(12);
-      doc.setTextColor(100);
-      doc.text(tipoReporte === 'TRANSACCIONES' ? 'Reporte de Transacciones' : 'Reporte de Solvencia Escolar', 14, 28);
-      
       doc.setFontSize(10);
-      doc.text(`Generado: ${new Date().toLocaleString()}`, 14, 35);
-      
-      // Filtros texto
-      let filtrosTexto = `Cédula: ${filtroCedula || 'Todas'}`;
-      if (tipoReporte === 'TRANSACCIONES') {
-        filtrosTexto += ` | Estado: ${filtroVerificacion} | Desde: ${filtroFechaInicio || '-'} Hasta: ${filtroFechaFin || '-'}`;
-      } else {
-        filtrosTexto += ` | Condición: ${filtroEstadoSolvencia}`;
-        if (filtroNivel !== 'TODOS') filtrosTexto += ` | Grado: ${filtroNivel}`;
-        if (filtroSeccion) filtrosTexto += ` | Sección: ${filtroSeccion.toUpperCase()}`;
-      }
-      doc.text(filtrosTexto, 14, 42);
+      doc.text(`Generado: ${new Date().toLocaleString()}`, 14, 28);
 
+      // --- PDF BALANCE ---
+      if (tipoReporte === 'BALANCE') {
+          const balance = getBalanceData();
+          doc.setTextColor(100);
+          doc.setFontSize(14);
+          doc.text("BALANCE DE RESULTADOS (INGRESOS vs EGRESOS)", 14, 40);
+          doc.setFontSize(10);
+          doc.text(`Período: ${filtroFechaInicio} al ${filtroFechaFin}`, 14, 46);
+
+          // Caja Resumen
+          doc.setDrawColor(0);
+          doc.setFillColor(245, 247, 250);
+          doc.rect(14, 55, 180, 30, 'FD');
+          
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(0, 100, 0); // Verde
+          doc.text(`INGRESOS TOTALES: $${balance.totalIngresos.toFixed(2)}`, 20, 65);
+          
+          doc.setTextColor(200, 0, 0); // Rojo
+          doc.text(`EGRESOS TOTALES:  $${balance.totalEgresos.toFixed(2)}`, 20, 72);
+          
+          const netoColor = balance.resultadoNeto >= 0 ? [0, 0, 0] : [200, 0, 0];
+          doc.setTextColor(netoColor[0], netoColor[1], netoColor[2]);
+          doc.setFontSize(12);
+          doc.text(`RESULTADO NETO:   $${balance.resultadoNeto.toFixed(2)}`, 20, 81);
+
+          // Tablas Detalladas
+          doc.setTextColor(0);
+          doc.setFontSize(11);
+          doc.text("Desglose de Egresos Operativos", 14, 100);
+
+          autoTable(doc, {
+              startY: 105,
+              head: [['Concepto / Partida', 'Monto Total ($)']],
+              body: [
+                  ['Servicios Públicos e Impuestos', `$${balance.egresosServicios.toFixed(2)}`],
+                  ['Nómina de Personal', `$${balance.egresosNomina.toFixed(2)}`],
+                  ['Compras / Inventario', `$${balance.egresosCompras.toFixed(2)}`]
+              ],
+              foot: [['TOTAL EGRESOS', `$${balance.totalEgresos.toFixed(2)}`]],
+              theme: 'grid',
+              headStyles: { fillColor: [200, 50, 50] }
+          });
+
+          doc.text("Detalle de Ingresos", 14, (doc as any).lastAutoTable.finalY + 15);
+          autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY + 20,
+            head: [['Concepto', 'Monto Total ($)']],
+            body: [
+                ['Cobranza (Mensualidades/Inscripción)', `$${balance.ingresosRepresentantes.toFixed(2)}`]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [50, 150, 50] }
+          });
+
+          doc.save(`balance_financiero_${filtroFechaInicio}_${filtroFechaFin}.pdf`);
+          setDownloading(false);
+          return;
+      }
+
+      // --- PDF TRANSACCIONES Y SOLVENCIA (Lógica existente) ---
+      doc.setTextColor(100);
+      doc.setFontSize(12);
+      doc.text(tipoReporte === 'TRANSACCIONES' ? 'Reporte de Transacciones' : 'Reporte de Solvencia Escolar', 14, 40);
+      
+      const datos = obtenerDatosFiltrados();
+      
       if (tipoReporte === 'TRANSACCIONES') {
         const data = (datos as RegistroPago[]).map(p => [
           p.fechaRegistro,
@@ -293,14 +394,13 @@ export const Reportes: React.FC = () => {
           body: data,
         });
 
-        // Total al final
         const total = (datos as RegistroPago[]).reduce((sum, p) => sum + (p.monto || 0), 0);
         const finalY = (doc as any).lastAutoTable?.finalY || 60;
         doc.text(`Total en este reporte: $${total.toFixed(2)}`, 14, finalY + 10);
 
       } else {
+        // SOLVENCIA
         const data = (datos as DeudaCalculada[]).map(s => {
-          // Filtrar alumnos para mostrar en la celda resumen si hay filtro de nivel
           const alumnosParaReporte = s.detallesAlumnos.filter(alu => {
               let match = true;
               if (filtroNivel !== 'TODOS') match = match && alu.nivel === filtroNivel;
@@ -350,7 +450,7 @@ export const Reportes: React.FC = () => {
       doc.save(`reporte_${tipoReporte.toLowerCase()}_${new Date().getTime()}.pdf`);
     } catch (e) {
       console.error("Error al generar PDF:", e);
-      alert("Hubo un error al generar el PDF. Por favor verifique los datos o la consola.");
+      alert("Hubo un error al generar el PDF.");
     } finally {
       setDownloading(false);
     }
@@ -362,15 +462,27 @@ export const Reportes: React.FC = () => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       
-      const resumenDatos = {
-        totalEstudiantes: representantes.reduce((acc, r) => acc + r.alumnos.length, 0),
-        totalPagadoVerificado: pagos.filter(p => p.estado === EstadoPago.VERIFICADO).reduce((acc, p) => acc + (p.monto || 0), 0),
-        morosos: solvencias.filter(s => s.esMoroso).length,
-        solventes: solvencias.filter(s => !s.esMoroso).length,
-        deudaTotal: solvencias.reduce((acc, s) => acc + s.saldoPendiente, 0)
-      };
-
-      const prompt = `Analiza estos datos de solvencia escolar y da un resumen ejecutivo breve (3 items): ${JSON.stringify(resumenDatos)}`;
+      let prompt = "";
+      
+      if(tipoReporte === 'BALANCE') {
+          const bal = getBalanceData();
+          prompt = `Analiza este balance financiero escolar (${filtroFechaInicio} a ${filtroFechaFin}):
+          - Ingresos Totales: $${bal.totalIngresos}
+          - Egresos Nomina: $${bal.egresosNomina}
+          - Egresos Servicios: $${bal.egresosServicios}
+          - Compras Inventario: $${bal.egresosCompras}
+          - Resultado Neto: $${bal.resultadoNeto}
+          Dame 3 puntos clave sobre la salud financiera y una recomendación.`;
+      } else {
+          const resumenDatos = {
+            totalEstudiantes: representantes.reduce((acc, r) => acc + r.alumnos.length, 0),
+            totalPagadoVerificado: pagos.filter(p => p.estado === EstadoPago.VERIFICADO).reduce((acc, p) => acc + (p.monto || 0), 0),
+            morosos: solvencias.filter(s => s.esMoroso).length,
+            solventes: solvencias.filter(s => !s.esMoroso).length,
+            deudaTotal: solvencias.reduce((acc, s) => acc + s.saldoPendiente, 0)
+          };
+          prompt = `Analiza estos datos de solvencia escolar y da un resumen ejecutivo breve (3 items): ${JSON.stringify(resumenDatos)}`;
+      }
       
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -384,6 +496,86 @@ export const Reportes: React.FC = () => {
     }
   };
 
+  const renderBalanceView = () => {
+      const balance = getBalanceData();
+      return (
+          <div className="space-y-6 animate-in fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* CARD INGRESOS */}
+                  <div className="bg-white p-6 rounded-xl border border-green-100 shadow-sm flex items-center justify-between">
+                      <div>
+                          <p className="text-sm font-bold text-gray-500 uppercase">Ingresos Totales</p>
+                          <h3 className="text-2xl font-bold text-green-600 mt-1">${balance.totalIngresos.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                          <p className="text-xs text-gray-400 mt-1">Cobranza Verificada</p>
+                      </div>
+                      <div className="bg-green-100 p-3 rounded-full text-green-600">
+                          <TrendingUp size={24}/>
+                      </div>
+                  </div>
+
+                  {/* CARD EGRESOS */}
+                  <div className="bg-white p-6 rounded-xl border border-red-100 shadow-sm flex items-center justify-between">
+                      <div>
+                          <p className="text-sm font-bold text-gray-500 uppercase">Egresos Totales</p>
+                          <h3 className="text-2xl font-bold text-red-600 mt-1">${balance.totalEgresos.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                          <p className="text-xs text-gray-400 mt-1">Servicios + Nómina + Compras</p>
+                      </div>
+                      <div className="bg-red-100 p-3 rounded-full text-red-600">
+                          <TrendingDown size={24}/>
+                      </div>
+                  </div>
+
+                  {/* CARD NETO */}
+                  <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between">
+                      <div>
+                          <p className="text-sm font-bold text-gray-500 uppercase">Resultado Neto</p>
+                          <h3 className={`text-2xl font-bold mt-1 ${balance.resultadoNeto >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>
+                              ${balance.resultadoNeto.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                          </h3>
+                          <p className="text-xs text-gray-400 mt-1">Utilidad / Déficit</p>
+                      </div>
+                      <div className="bg-indigo-100 p-3 rounded-full text-indigo-600">
+                          <Scale size={24}/>
+                      </div>
+                  </div>
+              </div>
+
+              {/* DETALLE EGRESOS */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                      <h3 className="font-bold text-gray-700">Desglose de Egresos Operativos</h3>
+                  </div>
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="flex justify-between items-center border-b pb-2">
+                          <span className="text-gray-600">Nómina y Personal</span>
+                          <span className="font-bold text-gray-800">${balance.egresosNomina.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                          <span className="text-gray-600">Servicios e Impuestos</span>
+                          <span className="font-bold text-gray-800">${balance.egresosServicios.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center border-b pb-2">
+                          <span className="text-gray-600">Compras e Insumos</span>
+                          <span className="font-bold text-gray-800">${balance.egresosCompras.toFixed(2)}</span>
+                      </div>
+                  </div>
+                  <div className="px-6 pb-6">
+                      <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden flex">
+                          <div className="bg-red-400 h-full" style={{ width: `${(balance.egresosNomina / (balance.totalEgresos || 1)) * 100}%` }} title="Nómina"></div>
+                          <div className="bg-orange-400 h-full" style={{ width: `${(balance.egresosServicios / (balance.totalEgresos || 1)) * 100}%` }} title="Servicios"></div>
+                          <div className="bg-blue-400 h-full" style={{ width: `${(balance.egresosCompras / (balance.totalEgresos || 1)) * 100}%` }} title="Compras"></div>
+                      </div>
+                      <div className="flex gap-4 mt-2 text-xs text-gray-500 justify-center">
+                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400 rounded-full"></div> Nómina</span>
+                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-orange-400 rounded-full"></div> Servicios</span>
+                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-400 rounded-full"></div> Compras</span>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -392,15 +584,15 @@ export const Reportes: React.FC = () => {
         </h2>
 
         {/* Selector de Tipo de Reporte */}
-        <div className="flex gap-4 mb-6 border-b pb-4">
+        <div className="flex flex-col md:flex-row gap-4 mb-6 border-b pb-4">
           <button 
             onClick={() => setTipoReporte('TRANSACCIONES')}
             className={`flex-1 p-4 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${tipoReporte === 'TRANSACCIONES' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-gray-200 hover:border-gray-300'}`}
           >
             <DollarSign size={24} />
             <div className="text-left">
-              <span className="block font-bold">Historial de Pagos</span>
-              <span className="text-xs text-gray-500">Filtrar por fecha y verificación</span>
+              <span className="block font-bold">Ingresos</span>
+              <span className="text-xs text-gray-500">Pagos Recibidos</span>
             </div>
           </button>
           
@@ -410,26 +602,39 @@ export const Reportes: React.FC = () => {
           >
             <Filter size={24} />
             <div className="text-left">
-              <span className="block font-bold">Estado de Solvencia</span>
-              <span className="text-xs text-gray-500">Morosos vs Solventes</span>
+              <span className="block font-bold">Solvencia</span>
+              <span className="text-xs text-gray-500">Deudores vs Al Día</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => setTipoReporte('BALANCE')}
+            className={`flex-1 p-4 rounded-xl border-2 transition-all flex items-center justify-center gap-3 ${tipoReporte === 'BALANCE' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-gray-200 hover:border-gray-300'}`}
+          >
+            <Scale size={24} />
+            <div className="text-left">
+              <span className="block font-bold">Balance Financiero</span>
+              <span className="text-xs text-gray-500">Resultados Ingresos/Egresos</span>
             </div>
           </button>
         </div>
 
         {/* Controles de Filtros */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded-lg">
-          <div className="md:col-span-1">
-            <label className="block text-xs font-bold text-gray-500 mb-1">Cédula Representante</label>
-            <input 
-              type="text" 
-              value={filtroCedula}
-              onChange={(e) => setFiltroCedula(e.target.value)}
-              className="w-full border border-gray-300 rounded-md p-2 text-sm"
-              placeholder="V-..."
-            />
-          </div>
+          {(tipoReporte === 'TRANSACCIONES' || tipoReporte === 'SOLVENCIA') && (
+            <div className="md:col-span-1">
+              <label className="block text-xs font-bold text-gray-500 mb-1">Cédula Representante</label>
+              <input 
+                type="text" 
+                value={filtroCedula}
+                onChange={(e) => setFiltroCedula(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                placeholder="V-..."
+              />
+            </div>
+          )}
 
-          {tipoReporte === 'TRANSACCIONES' && (
+          {(tipoReporte === 'TRANSACCIONES' || tipoReporte === 'BALANCE') && (
             <>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Desde Fecha</label>
@@ -439,6 +644,10 @@ export const Reportes: React.FC = () => {
                 <label className="block text-xs font-bold text-gray-500 mb-1">Hasta Fecha</label>
                 <input type="date" value={filtroFechaFin} onChange={(e) => setFiltroFechaFin(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm" />
               </div>
+            </>
+          )}
+
+          {tipoReporte === 'TRANSACCIONES' && (
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Verificación</label>
                 <select value={filtroVerificacion} onChange={(e) => setFiltroVerificacion(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
@@ -447,7 +656,6 @@ export const Reportes: React.FC = () => {
                   <option value="VERIFICADO">Verificados</option>
                 </select>
               </div>
-            </>
           )}
 
           {tipoReporte === 'SOLVENCIA' && (
@@ -495,134 +703,136 @@ export const Reportes: React.FC = () => {
               className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 font-medium flex items-center gap-2 shadow-md"
             >
               {downloading ? <Loader2 className="animate-spin" /> : <Download size={20} />}
-              Descargar Reporte PDF
+              Descargar PDF
             </button>
         </div>
       </div>
 
-      {/* Tabla Resultados */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-              <h3 className="font-bold text-gray-700">Previsualización de Datos ({obtenerDatosFiltrados().length} registros)</h3>
-          </div>
-          <div className="overflow-x-auto max-h-[600px]">
-              <table className="w-full text-sm text-left text-gray-500">
-                  <thead className="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10">
-                      <tr>
-                          {tipoReporte === 'TRANSACCIONES' ? (
-                              <>
-                                  <th className="px-6 py-3">Fecha</th>
-                                  <th className="px-6 py-3">Cédula</th>
-                                  <th className="px-6 py-3">Nombre</th>
-                                  <th className="px-6 py-3 text-right">Monto</th>
-                                  <th className="px-6 py-3 text-center">Estado</th>
-                              </>
-                          ) : (
-                              <>
-                                  <th className="px-2 py-3 w-8"></th>
-                                  <th className="px-6 py-3">Cédula</th>
-                                  <th className="px-6 py-3">Nombre</th>
-                                  <th className="px-6 py-3 text-right">Deuda Total</th>
-                                  <th className="px-6 py-3 text-right">Pagado</th>
-                                  <th className="px-6 py-3 text-right">Pendiente</th>
-                                  <th className="px-6 py-3 text-center">Condición</th>
-                              </>
-                          )}
-                      </tr>
-                  </thead>
-                  <tbody>
-                      {obtenerDatosFiltrados().map((item: any, idx) => (
-                        <React.Fragment key={idx}>
-                          <tr className="bg-white border-b hover:bg-gray-50">
+      {/* VISTA PRINCIPAL SEGUN TIPO */}
+      {tipoReporte === 'BALANCE' ? renderBalanceView() : (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                  <h3 className="font-bold text-gray-700">Previsualización de Datos ({obtenerDatosFiltrados().length} registros)</h3>
+              </div>
+              <div className="overflow-x-auto max-h-[600px]">
+                  <table className="w-full text-sm text-left text-gray-500">
+                      <thead className="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10">
+                          <tr>
                               {tipoReporte === 'TRANSACCIONES' ? (
                                   <>
-                                      <td className="px-6 py-4">{item.fechaRegistro}</td>
-                                      <td className="px-6 py-4 text-xs">{item.cedulaRepresentante}</td>
-                                      <td className="px-6 py-4">{item.nombreRepresentante}</td>
-                                      <td className="px-6 py-4 text-right font-mono">${(item.monto || 0).toFixed(2)}</td>
-                                      <td className="px-6 py-4 text-center">
-                                          <span className={`px-2 py-1 rounded text-[10px] ${item.estado === EstadoPago.VERIFICADO ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                              {item.estado}
-                                          </span>
-                                      </td>
+                                      <th className="px-6 py-3">Fecha</th>
+                                      <th className="px-6 py-3">Cédula</th>
+                                      <th className="px-6 py-3">Nombre</th>
+                                      <th className="px-6 py-3 text-right">Monto</th>
+                                      <th className="px-6 py-3 text-center">Estado</th>
                                   </>
                               ) : (
                                   <>
-                                      <td className="px-2 py-4 text-center">
-                                        <button 
-                                          onClick={() => toggleRow(item.cedula)}
-                                          className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
-                                        >
-                                          {expandedRow === item.cedula ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                        </button>
-                                      </td>
-                                      <td className="px-6 py-4 text-xs font-medium text-slate-700">{item.cedula}</td>
-                                      <td className="px-6 py-4 font-medium text-slate-800">{item.nombre}</td>
-                                      <td className="px-6 py-4 text-right font-mono text-gray-400">${item.deudaEsperada.toFixed(2)}</td>
-                                      <td className="px-6 py-4 text-right font-mono text-green-600">${item.totalPagado.toFixed(2)}</td>
-                                      <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">${item.saldoPendiente.toFixed(2)}</td>
-                                      <td className="px-6 py-4 text-center">
-                                          {item.esMoroso ? (
-                                              <span className="flex items-center justify-center gap-1 text-red-600 font-bold text-xs"><XCircle size={14}/> MOROSO</span>
-                                          ) : (
-                                              <span className="flex items-center justify-center gap-1 text-green-600 font-bold text-xs"><CheckCircle size={14}/> SOLVENTE</span>
-                                          )}
-                                      </td>
+                                      <th className="px-2 py-3 w-8"></th>
+                                      <th className="px-6 py-3">Cédula</th>
+                                      <th className="px-6 py-3">Nombre</th>
+                                      <th className="px-6 py-3 text-right">Deuda Total</th>
+                                      <th className="px-6 py-3 text-right">Pagado</th>
+                                      <th className="px-6 py-3 text-right">Pendiente</th>
+                                      <th className="px-6 py-3 text-center">Condición</th>
                                   </>
                               )}
                           </tr>
-                          {/* Fila Expandida para Detalle de Alumnos */}
-                          {tipoReporte === 'SOLVENCIA' && expandedRow === item.cedula && (
-                            <tr className="bg-slate-50">
-                              <td colSpan={7} className="px-8 py-4 border-b">
-                                <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-inner">
-                                  <div className="px-4 py-2 bg-slate-100 border-b border-gray-200 text-xs font-bold text-slate-700 uppercase tracking-wider flex justify-between">
-                                    <span>Detalle Financiero por Estudiante</span>
-                                    <span>Matrícula: {item.matricula}</span>
-                                  </div>
-                                  <table className="w-full text-xs">
-                                    <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
-                                      <tr>
-                                        <th className="px-4 py-3 text-left">Alumno</th>
-                                        <th className="px-4 py-3 text-left">Nivel (Sección)</th>
-                                        <th className="px-4 py-3 text-right">Costo Calculado</th>
-                                        <th className="px-4 py-3 text-right">Total Pagado</th>
-                                        <th className="px-4 py-3 text-right">Deuda Pendiente</th>
-                                        <th className="px-4 py-3 text-center">Estado</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                      {item.detallesAlumnos.map((alu: DetalleAlumnoDeuda, i: number) => (
-                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                          <td className="px-4 py-3 font-medium text-slate-700">{alu.nombre}</td>
-                                          <td className="px-4 py-3 text-gray-500">{alu.nivel} <span className="text-gray-400">({alu.seccion})</span></td>
-                                          <td className="px-4 py-3 text-right font-mono text-gray-500">${alu.costo.toFixed(2)}</td>
-                                          <td className="px-4 py-3 text-right font-mono text-green-600 font-medium">${alu.pagado.toFixed(2)}</td>
-                                          <td className="px-4 py-3 text-right font-mono font-bold text-red-600">${alu.pendiente.toFixed(2)}</td>
-                                          <td className="px-4 py-3 text-center">
-                                              {alu.pendiente > 0 ? (
-                                                  <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">DEBE</span>
+                      </thead>
+                      <tbody>
+                          {obtenerDatosFiltrados().map((item: any, idx) => (
+                            <React.Fragment key={idx}>
+                              <tr className="bg-white border-b hover:bg-gray-50">
+                                  {tipoReporte === 'TRANSACCIONES' ? (
+                                      <>
+                                          <td className="px-6 py-4">{item.fechaRegistro}</td>
+                                          <td className="px-6 py-4 text-xs">{item.cedulaRepresentante}</td>
+                                          <td className="px-6 py-4">{item.nombreRepresentante}</td>
+                                          <td className="px-6 py-4 text-right font-mono">${(item.monto || 0).toFixed(2)}</td>
+                                          <td className="px-6 py-4 text-center">
+                                              <span className={`px-2 py-1 rounded text-[10px] ${item.estado === EstadoPago.VERIFICADO ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                  {item.estado}
+                                              </span>
+                                          </td>
+                                      </>
+                                  ) : (
+                                      <>
+                                          <td className="px-2 py-4 text-center">
+                                            <button 
+                                              onClick={() => toggleRow(item.cedula)}
+                                              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+                                            >
+                                              {expandedRow === item.cedula ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                            </button>
+                                          </td>
+                                          <td className="px-6 py-4 text-xs font-medium text-slate-700">{item.cedula}</td>
+                                          <td className="px-6 py-4 font-medium text-slate-800">{item.nombre}</td>
+                                          <td className="px-6 py-4 text-right font-mono text-gray-400">${item.deudaEsperada.toFixed(2)}</td>
+                                          <td className="px-6 py-4 text-right font-mono text-green-600">${item.totalPagado.toFixed(2)}</td>
+                                          <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">${item.saldoPendiente.toFixed(2)}</td>
+                                          <td className="px-6 py-4 text-center">
+                                              {item.esMoroso ? (
+                                                  <span className="flex items-center justify-center gap-1 text-red-600 font-bold text-xs"><XCircle size={14}/> MOROSO</span>
                                               ) : (
-                                                  <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">AL DÍA</span>
+                                                  <span className="flex items-center justify-center gap-1 text-green-600 font-bold text-xs"><CheckCircle size={14}/> SOLVENTE</span>
                                               )}
                                           </td>
-                                        </tr>
-                                      ))}
-                                      {item.detallesAlumnos.length === 0 && (
-                                        <tr><td colSpan={6} className="px-4 py-4 text-center text-gray-400 italic">Sin alumnos registrados</td></tr>
-                                      )}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                  </tbody>
-              </table>
+                                      </>
+                                  )}
+                              </tr>
+                              {/* Fila Expandida para Detalle de Alumnos */}
+                              {tipoReporte === 'SOLVENCIA' && expandedRow === item.cedula && (
+                                <tr className="bg-slate-50">
+                                  <td colSpan={7} className="px-8 py-4 border-b">
+                                    <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-inner">
+                                      <div className="px-4 py-2 bg-slate-100 border-b border-gray-200 text-xs font-bold text-slate-700 uppercase tracking-wider flex justify-between">
+                                        <span>Detalle Financiero por Estudiante</span>
+                                        <span>Matrícula: {item.matricula}</span>
+                                      </div>
+                                      <table className="w-full text-xs">
+                                        <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
+                                          <tr>
+                                            <th className="px-4 py-3 text-left">Alumno</th>
+                                            <th className="px-4 py-3 text-left">Nivel (Sección)</th>
+                                            <th className="px-4 py-3 text-right">Costo Calculado</th>
+                                            <th className="px-4 py-3 text-right">Total Pagado</th>
+                                            <th className="px-4 py-3 text-right">Deuda Pendiente</th>
+                                            <th className="px-4 py-3 text-center">Estado</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                          {item.detallesAlumnos.map((alu: DetalleAlumnoDeuda, i: number) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                              <td className="px-4 py-3 font-medium text-slate-700">{alu.nombre}</td>
+                                              <td className="px-4 py-3 text-gray-500">{alu.nivel} <span className="text-gray-400">({alu.seccion})</span></td>
+                                              <td className="px-4 py-3 text-right font-mono text-gray-500">${alu.costo.toFixed(2)}</td>
+                                              <td className="px-4 py-3 text-right font-mono text-green-600 font-medium">${alu.pagado.toFixed(2)}</td>
+                                              <td className="px-4 py-3 text-right font-mono font-bold text-red-600">${alu.pendiente.toFixed(2)}</td>
+                                              <td className="px-4 py-3 text-center">
+                                                  {alu.pendiente > 0 ? (
+                                                      <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">DEBE</span>
+                                                  ) : (
+                                                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">AL DÍA</span>
+                                                  )}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                          {item.detallesAlumnos.length === 0 && (
+                                            <tr><td colSpan={6} className="px-4 py-4 text-center text-gray-400 italic">Sin alumnos registrados</td></tr>
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
           </div>
-      </div>
+      )}
 
       {/* Sección IA */}
       {hasApiKey && (
