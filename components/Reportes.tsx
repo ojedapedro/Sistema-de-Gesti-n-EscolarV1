@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, Scale } from 'lucide-react';
+import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, Scale, AlertCircle, Sparkles } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo, PagoServicio, RegistroNomina, MovimientoInventario, TipoMovimiento } from '../types';
 import { MENSUALIDADES, LOGO_URL } from '../constants';
@@ -40,6 +40,7 @@ interface BalanceData {
     totalIngresos: number;
     totalEgresos: number;
     resultadoNeto: number;
+    cuentasPorCobrar: number;
 }
 
 // Helper
@@ -99,7 +100,7 @@ export const Reportes: React.FC = () => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
-  const hasApiKey = !!process.env.API_KEY;
+  const hasApiKey = !!process.env.API_KEY || !!(window as any).process?.env?.API_KEY;
 
   useEffect(() => {
     cargarDatosGenerales();
@@ -239,6 +240,9 @@ export const Reportes: React.FC = () => {
 
       const totalEgresos = egresosServ + egresosNom + egresosComp;
 
+      // 5. Cuentas por Cobrar (Deuda Total Actual)
+      const totalPorCobrar = solvencias.reduce((acc, s) => acc + s.saldoPendiente, 0);
+
       return {
           ingresosRepresentantes: ingresosRep,
           egresosServicios: egresosServ,
@@ -246,7 +250,8 @@ export const Reportes: React.FC = () => {
           egresosCompras: egresosComp,
           totalIngresos: ingresosRep,
           totalEgresos: totalEgresos,
-          resultadoNeto: ingresosRep - totalEgresos
+          resultadoNeto: ingresosRep - totalEgresos,
+          cuentasPorCobrar: totalPorCobrar
       };
   };
 
@@ -322,7 +327,7 @@ export const Reportes: React.FC = () => {
           // Caja Resumen
           doc.setDrawColor(0);
           doc.setFillColor(245, 247, 250);
-          doc.rect(14, 55, 180, 30, 'FD');
+          doc.rect(14, 55, 180, 40, 'FD');
           
           doc.setFont("helvetica", "bold");
           doc.setTextColor(0, 100, 0); // Verde
@@ -336,13 +341,17 @@ export const Reportes: React.FC = () => {
           doc.setFontSize(12);
           doc.text(`RESULTADO NETO:   $${balance.resultadoNeto.toFixed(2)}`, 20, 81);
 
+          doc.setFontSize(10);
+          doc.setTextColor(200, 100, 0); // Naranja
+          doc.text(`CUENTAS POR COBRAR (MOROSIDAD ACTUAL): $${balance.cuentasPorCobrar.toFixed(2)}`, 20, 90);
+
           // Tablas Detalladas
           doc.setTextColor(0);
           doc.setFontSize(11);
-          doc.text("Desglose de Egresos Operativos", 14, 100);
+          doc.text("Desglose de Egresos Operativos", 14, 110);
 
           autoTable(doc, {
-              startY: 105,
+              startY: 115,
               head: [['Concepto / Partida', 'Monto Total ($)']],
               body: [
                   ['Servicios Públicos e Impuestos', `$${balance.egresosServicios.toFixed(2)}`],
@@ -364,6 +373,35 @@ export const Reportes: React.FC = () => {
             theme: 'grid',
             headStyles: { fillColor: [50, 150, 50] }
           });
+
+          // --- AGREGAR INFORME IA AL PDF SI EXISTE ---
+          if (aiSummary) {
+              doc.addPage();
+              if (logo) doc.addImage(logo, 'PNG', 170, 10, 25, 25);
+              
+              doc.setFillColor(240, 240, 255);
+              doc.rect(0, 0, 210, 40, 'F');
+              
+              doc.setFontSize(16);
+              doc.setTextColor(63, 81, 181);
+              doc.setFont("helvetica", "bold");
+              doc.text("INFORME DE ANÁLISIS FINANCIERO INTELIGENTE", 105, 25, { align: 'center' });
+              
+              doc.setFontSize(10);
+              doc.setTextColor(100);
+              doc.setFont("helvetica", "normal");
+              doc.text("Generado por AdminPro AI", 105, 32, { align: 'center' });
+
+              doc.setTextColor(0);
+              doc.setFontSize(11);
+              
+              const splitText = doc.splitTextToSize(aiSummary, 180);
+              doc.text(splitText, 14, 50);
+              
+              doc.setFontSize(8);
+              doc.setTextColor(150);
+              doc.text("Nota: Este informe es generado por IA basado en los datos proporcionados. Verificar con administración.", 14, 280);
+          }
 
           doc.save(`balance_financiero_${filtroFechaInicio}_${filtroFechaFin}.pdf`);
           setDownloading(false);
@@ -457,22 +495,45 @@ export const Reportes: React.FC = () => {
   };
 
   const generarResumenIA = async () => {
-    if (!hasApiKey) return;
+    let key = process.env.API_KEY;
+    if(!key || key.length < 10) {
+        key = (window as any).process?.env?.API_KEY;
+    }
+
+    if (!key) {
+        alert("Falta configuración de API Key para usar la IA.");
+        return;
+    }
+
     setLoading(true);
+    setAiSummary(''); // Limpiar anterior
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      const ai = new GoogleGenAI({ apiKey: key });
       
       let prompt = "";
       
       if(tipoReporte === 'BALANCE') {
           const bal = getBalanceData();
-          prompt = `Analiza este balance financiero escolar (${filtroFechaInicio} a ${filtroFechaFin}):
-          - Ingresos Totales: $${bal.totalIngresos}
-          - Egresos Nomina: $${bal.egresosNomina}
-          - Egresos Servicios: $${bal.egresosServicios}
-          - Compras Inventario: $${bal.egresosCompras}
-          - Resultado Neto: $${bal.resultadoNeto}
-          Dame 3 puntos clave sobre la salud financiera y una recomendación.`;
+          prompt = `
+            Actúa como un Auditor Financiero Experto para un Colegio Privado. Genera un "INFORME EJECUTIVO DE GESTIÓN" detallado basado en estos datos del período ${filtroFechaInicio} al ${filtroFechaFin}:
+
+            DATOS FINANCIEROS:
+            - Ingresos Totales (Cobranza): $${bal.totalIngresos.toFixed(2)}
+            - Egresos Operativos Totales: $${bal.totalEgresos.toFixed(2)}
+              * Nómina: $${bal.egresosNomina.toFixed(2)}
+              * Servicios: $${bal.egresosServicios.toFixed(2)}
+              * Compras/Inventario: $${bal.egresosCompras.toFixed(2)}
+            - Resultado Neto (Utilidad/Déficit): $${bal.resultadoNeto.toFixed(2)}
+            - Cuentas por Cobrar (Morosidad Acumulada): $${bal.cuentasPorCobrar.toFixed(2)}
+
+            ESTRUCTURA DEL INFORME (Usa títulos claros y viñetas):
+            1. ANÁLISIS DE RENTABILIDAD: Evalúa el margen neto. ¿Los ingresos cubren los costos operativos?
+            2. ANÁLISIS DE GASTOS: Identifica qué partida (Nómina, Servicios, Compras) consume más recursos y si es proporcional.
+            3. SALUD DE LA CARTERA: Analiza la relación entre Ingresos Reales vs Cuentas por Cobrar (Morosidad). ¿Es crítico el nivel de deuda?
+            4. RECOMENDACIONES ESTRATÉGICAS: Dame 3 acciones concretas para mejorar el flujo de caja o reducir gastos el próximo mes.
+
+            El tono debe ser profesional, directivo y formal.
+          `;
       } else {
           const resumenDatos = {
             totalEstudiantes: representantes.reduce((acc, r) => acc + r.alumnos.length, 0),
@@ -488,9 +549,10 @@ export const Reportes: React.FC = () => {
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
-      setAiSummary(response.text || "Sin análisis.");
+      setAiSummary(response.text || "La IA no generó respuesta.");
     } catch (error) {
-      setAiSummary("Error IA.");
+      console.error(error);
+      setAiSummary("Error conectando con el servicio de IA. Verifique su API Key o conexión.");
     } finally {
       setLoading(false);
     }
@@ -500,7 +562,7 @@ export const Reportes: React.FC = () => {
       const balance = getBalanceData();
       return (
           <div className="space-y-6 animate-in fade-in">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {/* CARD INGRESOS */}
                   <div className="bg-white p-6 rounded-xl border border-green-100 shadow-sm flex items-center justify-between">
                       <div>
@@ -518,7 +580,7 @@ export const Reportes: React.FC = () => {
                       <div>
                           <p className="text-sm font-bold text-gray-500 uppercase">Egresos Totales</p>
                           <h3 className="text-2xl font-bold text-red-600 mt-1">${balance.totalEgresos.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
-                          <p className="text-xs text-gray-400 mt-1">Servicios + Nómina + Compras</p>
+                          <p className="text-xs text-gray-400 mt-1">Servicios + Nómina</p>
                       </div>
                       <div className="bg-red-100 p-3 rounded-full text-red-600">
                           <TrendingDown size={24}/>
@@ -538,38 +600,90 @@ export const Reportes: React.FC = () => {
                           <Scale size={24}/>
                       </div>
                   </div>
+
+                  {/* CARD CUENTAS POR COBRAR (NUEVO) */}
+                  <div className="bg-white p-6 rounded-xl border border-orange-100 shadow-sm flex items-center justify-between">
+                      <div>
+                          <p className="text-sm font-bold text-gray-500 uppercase">Cuentas por Cobrar</p>
+                          <h3 className="text-2xl font-bold text-orange-600 mt-1">${balance.cuentasPorCobrar.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                          <p className="text-xs text-gray-400 mt-1">Morosidad Acumulada</p>
+                      </div>
+                      <div className="bg-orange-100 p-3 rounded-full text-orange-600">
+                          <AlertCircle size={24}/>
+                      </div>
+                  </div>
               </div>
 
-              {/* DETALLE EGRESOS */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
-                      <h3 className="font-bold text-gray-700">Desglose de Egresos Operativos</h3>
+              {/* CONTENEDOR GRÁFICO Y ANÁLISIS IA */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* DETALLE EGRESOS (2 Columnas) */}
+                  <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-full">
+                      <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                          <h3 className="font-bold text-gray-700">Desglose de Egresos Operativos</h3>
+                      </div>
+                      <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="flex justify-between items-center border-b pb-2">
+                              <span className="text-gray-600">Nómina y Personal</span>
+                              <span className="font-bold text-gray-800">${balance.egresosNomina.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b pb-2">
+                              <span className="text-gray-600">Servicios e Impuestos</span>
+                              <span className="font-bold text-gray-800">${balance.egresosServicios.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center border-b pb-2">
+                              <span className="text-gray-600">Compras e Insumos</span>
+                              <span className="font-bold text-gray-800">${balance.egresosCompras.toFixed(2)}</span>
+                          </div>
+                      </div>
+                      <div className="px-6 pb-6">
+                          <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden flex">
+                              <div className="bg-red-400 h-full" style={{ width: `${(balance.egresosNomina / (balance.totalEgresos || 1)) * 100}%` }} title="Nómina"></div>
+                              <div className="bg-orange-400 h-full" style={{ width: `${(balance.egresosServicios / (balance.totalEgresos || 1)) * 100}%` }} title="Servicios"></div>
+                              <div className="bg-blue-400 h-full" style={{ width: `${(balance.egresosCompras / (balance.totalEgresos || 1)) * 100}%` }} title="Compras"></div>
+                          </div>
+                          <div className="flex gap-4 mt-2 text-xs text-gray-500 justify-center">
+                              <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400 rounded-full"></div> Nómina</span>
+                              <span className="flex items-center gap-1"><div className="w-3 h-3 bg-orange-400 rounded-full"></div> Servicios</span>
+                              <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-400 rounded-full"></div> Compras</span>
+                          </div>
+                      </div>
                   </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="flex justify-between items-center border-b pb-2">
-                          <span className="text-gray-600">Nómina y Personal</span>
-                          <span className="font-bold text-gray-800">${balance.egresosNomina.toFixed(2)}</span>
+
+                  {/* CAJA DE ANÁLISIS IA (1 Columna) */}
+                  <div className="bg-gradient-to-br from-indigo-50 to-white p-5 rounded-xl border border-indigo-200 shadow-sm flex flex-col h-full">
+                      <div className="flex items-center gap-2 mb-4">
+                          <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-sm">
+                              <Sparkles size={20} />
+                          </div>
+                          <h3 className="font-bold text-indigo-900 leading-tight">Análisis Financiero Inteligente (Mes)</h3>
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                          <span className="text-gray-600">Servicios e Impuestos</span>
-                          <span className="font-bold text-gray-800">${balance.egresosServicios.toFixed(2)}</span>
+                      
+                      <div className="flex-1 overflow-y-auto min-h-[150px] mb-4 text-sm text-slate-700 bg-white/60 p-3 rounded border border-indigo-100">
+                          {loading && !aiSummary ? (
+                              <div className="flex items-center gap-2 text-indigo-600 h-full justify-center">
+                                  <Loader2 className="animate-spin" size={20}/> Analizando datos...
+                              </div>
+                          ) : aiSummary ? (
+                              <p className="whitespace-pre-wrap leading-relaxed text-xs">{aiSummary}</p>
+                          ) : (
+                              <p className="text-gray-400 italic text-center mt-10">
+                                  Haga clic en "Generar Análisis" para obtener un informe de auditoría detallado.
+                              </p>
+                          )}
                       </div>
-                      <div className="flex justify-between items-center border-b pb-2">
-                          <span className="text-gray-600">Compras e Insumos</span>
-                          <span className="font-bold text-gray-800">${balance.egresosCompras.toFixed(2)}</span>
-                      </div>
-                  </div>
-                  <div className="px-6 pb-6">
-                      <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden flex">
-                          <div className="bg-red-400 h-full" style={{ width: `${(balance.egresosNomina / (balance.totalEgresos || 1)) * 100}%` }} title="Nómina"></div>
-                          <div className="bg-orange-400 h-full" style={{ width: `${(balance.egresosServicios / (balance.totalEgresos || 1)) * 100}%` }} title="Servicios"></div>
-                          <div className="bg-blue-400 h-full" style={{ width: `${(balance.egresosCompras / (balance.totalEgresos || 1)) * 100}%` }} title="Compras"></div>
-                      </div>
-                      <div className="flex gap-4 mt-2 text-xs text-gray-500 justify-center">
-                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-400 rounded-full"></div> Nómina</span>
-                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-orange-400 rounded-full"></div> Servicios</span>
-                          <span className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-400 rounded-full"></div> Compras</span>
-                      </div>
+
+                      <button 
+                          onClick={generarResumenIA}
+                          disabled={loading}
+                          className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50 text-sm flex justify-center items-center gap-2"
+                      >
+                          {loading ? 'Procesando...' : <><Bot size={16}/> Generar Análisis</>}
+                      </button>
+                      {aiSummary && (
+                          <p className="text-[10px] text-indigo-500 mt-2 text-center">
+                              * El informe se incluirá al descargar el PDF.
+                          </p>
+                      )}
                   </div>
               </div>
           </div>
@@ -834,8 +948,8 @@ export const Reportes: React.FC = () => {
           </div>
       )}
 
-      {/* Sección IA */}
-      {hasApiKey && (
+      {/* Sección IA (Solo si no es Balance, ya que Balance tiene su propia UI) */}
+      {hasApiKey && tipoReporte !== 'BALANCE' && (
         <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 mt-6">
             <h3 className="font-bold text-indigo-900 flex items-center gap-2 mb-2"><Bot size={20}/> Análisis IA</h3>
             <p className="text-sm text-indigo-700 mb-4">Genera un resumen ejecutivo basado en los datos visualizados.</p>

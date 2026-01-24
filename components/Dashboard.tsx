@@ -1,19 +1,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
-import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown, Bot, Sparkles } from 'lucide-react';
+import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown } from 'lucide-react';
 import { EstadoPago, RegistroPago, Representante, NivelConfig } from '../types';
 import { MENSUALIDADES } from '../constants';
-import { GoogleGenAI } from "@google/genai";
-
-// Función auxiliar para obtener la API Key de forma segura en distintos entornos
-const getApiKey = () => {
-  // Intento 1: Variable de entorno estándar (Build tools)
-  if (process.env.API_KEY && process.env.API_KEY.length > 10) return process.env.API_KEY;
-  // Intento 2: Polyfill en window (index.html)
-  if ((window as any).process?.env?.API_KEY) return (window as any).process.env.API_KEY;
-  return '';
-};
 
 export const Dashboard: React.FC = () => {
   const [pagos, setPagos] = useState<RegistroPago[]>([]);
@@ -21,10 +11,6 @@ export const Dashboard: React.FC = () => {
   const [niveles, setNiveles] = useState<NivelConfig[]>([]);
   const [tasa, setTasa] = useState(0);
   const [loading, setLoading] = useState(true);
-  
-  // Estado para IA
-  const [aiSummary, setAiSummary] = useState('');
-  const [generatingAI, setGeneratingAI] = useState(false);
   
   useEffect(() => {
     const cargarDatos = async () => {
@@ -134,58 +120,6 @@ export const Dashboard: React.FC = () => {
   const maxValChart = values.length > 0 ? Math.max(...values, 1) : 1;
   const metodosOrdenados = Object.entries(metodosData).sort((a,b) => b[1] - a[1]);
 
-  // --- Función Análisis IA ---
-  const generarAnalisisIA = async () => {
-    const apiKey = getApiKey();
-    
-    if (!apiKey) {
-        alert("⚠️ FALTA CONFIGURACIÓN \n\nNo se ha detectado la API Key de Google Gemini.\nPor favor, abre el archivo 'index.html' y pega tu clave dentro de las comillas en: window.process = { env: { API_KEY: 'PEGAR_AQUI' } }");
-        return;
-    }
-
-    setGeneratingAI(true);
-    setAiSummary(''); // Limpiar resumen anterior
-    
-    try {
-        const ai = new GoogleGenAI({ apiKey: apiKey });
-        
-        const prompt = `
-            Actúa como un Gerente Financiero Escolar experto. Analiza el cierre administrativo de ${nombreMes} ${anioActual} con los siguientes datos reales:
-
-            1. **Flujo de Caja Mensual:** $${totalMesUSD.toFixed(2)} recaudados (en ${pagosDelMes.length} transacciones).
-            2. **Cartera de Deuda Total:** $${totalMorosidad.toFixed(2)} (Morosidad acumulada).
-            3. **Eficiencia Operativa:** ${pagosPendientes} pagos en cola esperando verificación manual.
-            4. **Preferencia de Pago:** El método principal es ${metodosOrdenados.length > 0 ? metodosOrdenados[0][0] : 'N/A'}.
-
-            Genera un reporte estratégico detallado (máximo 100 palabras) con la siguiente estructura:
-            **📊 Balance Ingreso vs Deuda:** Evalúa la salud financiera comparando lo recaudado este mes frente a la deuda total acumulada. ¿Es sostenible la brecha?
-            **📢 Acción de Cobranza:** Recomienda una estrategia táctica específica (ej: "Campaña masiva por WhatsApp", "Suspensión de servicios", "Plan de financiamiento") para reducir la morosidad, considerando el método de pago preferido.
-            **⚡ Recomendación Operativa:** Una acción breve sobre la gestión de la cola de verificación.
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt
-        });
-        
-        if (response.text) {
-          setAiSummary(response.text);
-        } else {
-          setAiSummary("La IA no devolvió texto. Intente nuevamente.");
-        }
-
-    } catch (e: any) {
-        console.error("Error AI:", e);
-        let errorMsg = "Error conectando con el servicio de IA.";
-        if (e.message?.includes("API key")) errorMsg = "API Key inválida o expirada.";
-        setAiSummary(errorMsg);
-    } finally {
-        setGeneratingAI(false);
-    }
-  };
-
-  const hasKey = !!getApiKey();
-
   return (
     <div className="space-y-6 pb-20 md:pb-0">
       {/* HEADER: Adaptable a móvil */}
@@ -253,65 +187,6 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
       
-      {/* TARJETA IA: Análisis Financiero - Optimizada Móvil */}
-      <div className="bg-gradient-to-r from-indigo-50 to-white p-5 rounded-xl border border-indigo-200 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                <Bot size={100} />
-            </div>
-            <div className="flex flex-col md:flex-row gap-4 md:gap-6 relative z-10">
-                <div className="flex-shrink-0 flex items-start">
-                    <div className="bg-indigo-600 p-2.5 rounded-lg text-white shadow-lg hidden md:block">
-                        <Sparkles size={24} />
-                    </div>
-                    {/* Icono visible solo en móvil arriba */}
-                    <div className="flex items-center gap-2 md:hidden mb-1">
-                         <div className="bg-indigo-600 p-1.5 rounded-md text-white shadow">
-                            <Sparkles size={16} />
-                        </div>
-                        <h3 className="text-lg font-bold text-indigo-900">Análisis Inteligente</h3>
-                    </div>
-                </div>
-                
-                <div className="flex-1">
-                    <h3 className="text-lg font-bold text-indigo-900 mb-2 hidden md:block">Análisis Financiero Inteligente (Mes Actual)</h3>
-                    
-                    {!aiSummary && !generatingAI && (
-                        <p className="text-indigo-700/80 text-sm mb-4">
-                            Utilice la IA para analizar el rendimiento de {nombreMes}, tendencias y obtener estrategias de cobranza.
-                        </p>
-                    )}
-
-                    {generatingAI && (
-                        <div className="flex items-center gap-2 text-indigo-600 text-sm py-2 bg-indigo-50/50 rounded-lg px-2">
-                            <Loader2 className="animate-spin" size={16} /> <span className="text-xs font-medium">Analizando datos...</span>
-                        </div>
-                    )}
-
-                    {aiSummary && (
-                        <div className="bg-white/80 p-4 rounded-lg border border-indigo-100 text-sm text-slate-700 leading-relaxed mb-4 shadow-sm animate-in fade-in">
-                            <p className="whitespace-pre-wrap">{aiSummary}</p>
-                        </div>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row items-center gap-3">
-                        <button 
-                            onClick={generarAnalisisIA}
-                            disabled={generatingAI}
-                            className={`w-full sm:w-auto text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium transition-all shadow-sm flex justify-center items-center gap-2 active:scale-95 ${generatingAI ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            {generatingAI ? 'Procesando...' : (aiSummary ? 'Regenerar Análisis' : 'Generar Análisis IA')}
-                        </button>
-                        
-                        {!hasKey && (
-                            <span className="text-xs text-red-500 font-medium bg-red-50 px-2 py-1 rounded border border-red-100 text-center w-full sm:w-auto flex items-center justify-center gap-1">
-                                <AlertCircle size={12}/> Configuración requerida
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </div>
-      </div>
-
       {/* SECCIÓN: Resumen del Mes Actual */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Tarjeta de Totales del Mes */}
