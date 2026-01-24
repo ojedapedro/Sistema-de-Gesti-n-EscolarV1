@@ -211,17 +211,21 @@ export const Nomina: React.FC = () => {
     const activos = empleados.filter(e => e.estado === 'ACTIVO');
     
     // Cálculo automático de deducciones (Ley Venezuela Standard)
+    // NOTA: Se divide entre 2 porque la ficha tiene sueldo MENSUAL y el pago es QUINCENAL
     const registros: RegistroNomina[] = activos.map(emp => {
-      const sueldo = emp.sueldoBase;
-      const bono = emp.bono;
+      const sueldoMensual = emp.sueldoBase;
+      const bonoMensual = emp.bono;
+
+      const sueldoQuincenal = sueldoMensual / 2;
+      const bonoQuincenal = bonoMensual / 2;
       
-      // Deducciones sobre SUELDO BASE
-      const sso = sueldo * 0.04;     // IVSS 4%
-      const spf = sueldo * 0.005;    // Paro Forzoso 0.5%
-      const faov = sueldo * 0.01;    // FAOV 1%
+      // Deducciones sobre SUELDO QUINCENAL
+      const sso = sueldoQuincenal * 0.04;     // IVSS 4%
+      const spf = sueldoQuincenal * 0.005;    // Paro Forzoso 0.5%
+      const faov = sueldoQuincenal * 0.01;    // FAOV 1%
       
       const totalDeducciones = sso + spf + faov;
-      const totalPagar = (sueldo + bono) - totalDeducciones;
+      const totalPagar = (sueldoQuincenal + bonoQuincenal) - totalDeducciones;
 
       return {
         id: crypto.randomUUID(),
@@ -231,8 +235,8 @@ export const Nomina: React.FC = () => {
         cargo: emp.cargo,
         periodo: nominaPeriodo,
         fechaPago: nominaFechaPago,
-        sueldoBase: sueldo,
-        bono: bono,
+        sueldoBase: parseFloat(sueldoQuincenal.toFixed(2)), // Guardamos el quincenal
+        bono: parseFloat(bonoQuincenal.toFixed(2)),         // Guardamos el quincenal
         asignacionesExtra: 0,
         deduccionSSO: parseFloat(sso.toFixed(2)),
         deduccionSPF: parseFloat(spf.toFixed(2)),
@@ -318,8 +322,8 @@ export const Nomina: React.FC = () => {
 
       // Tabla Detalles
       const bodyData = [
-          ['Sueldo Base', `$${reg.sueldoBase.toFixed(2)}`, 'Seguro Social (IVSS 4%)', `$${reg.deduccionSSO.toFixed(2)}`],
-          ['Bono / Primas', `$${reg.bono.toFixed(2)}`, 'Paro Forzoso (0.5%)', `$${reg.deduccionSPF.toFixed(2)}`],
+          ['Sueldo Base (Quincenal)', `$${reg.sueldoBase.toFixed(2)}`, 'Seguro Social (IVSS 4%)', `$${reg.deduccionSSO.toFixed(2)}`],
+          ['Bono / Primas (Quincenal)', `$${reg.bono.toFixed(2)}`, 'Paro Forzoso (0.5%)', `$${reg.deduccionSPF.toFixed(2)}`],
           ['Asignaciones Extra', `$${reg.asignacionesExtra.toFixed(2)}`, 'FAOV (Vivienda 1%)', `$${reg.deduccionFAOV.toFixed(2)}`],
           ['', '', 'Otras Deducciones', `$${reg.otrasDeducciones.toFixed(2)}`]
       ];
@@ -976,4 +980,3 @@ export const Nomina: React.FC = () => {
     </div>
   );
 };
-    

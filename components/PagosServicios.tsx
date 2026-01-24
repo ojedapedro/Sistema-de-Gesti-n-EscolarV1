@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { PagoServicio, CategoriaServicio, MetodoPago } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Receipt, Calendar, AlertTriangle, CheckCircle, Plus, Search, FileText, X, Save, Loader2, Landmark } from 'lucide-react';
+import { Receipt, Calendar, AlertTriangle, CheckCircle, Plus, Search, FileText, X, Save, Loader2, Landmark, Printer } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LOGO_URL } from '../constants';
@@ -106,7 +106,10 @@ export const PagosServicios: React.FC = () => {
 
           await db.savePagoServicio(nuevoPago);
           setPagos(prev => [nuevoPago, ...prev]);
-          alert("Pago registrado correctamente.");
+          
+          if(window.confirm("Pago registrado correctamente. ¿Desea imprimir el Comprobante de Egreso?")) {
+              await generarComprobanteEgreso(nuevoPago);
+          }
           
           // Reset parcial
           setFormData({
@@ -126,6 +129,108 @@ export const PagosServicios: React.FC = () => {
           alert("Error al guardar.");
       } finally {
           setLoading(false);
+      }
+  };
+
+  const generarComprobanteEgreso = async (pago: PagoServicio) => {
+      try {
+          const doc = new jsPDF();
+          const logo = await loadImage(LOGO_URL);
+          if(logo) doc.addImage(logo, 'PNG', 15, 10, 25, 25);
+
+          // Header Institucional
+          doc.setFontSize(16);
+          doc.setFont("helvetica", "bold");
+          doc.text("COMPROBANTE DE EGRESO", 105, 20, { align: 'center' });
+          
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "normal");
+          doc.text("Administración Escolar", 105, 26, { align: 'center' });
+          doc.text(`Control N°: ${pago.id.substring(0,8).toUpperCase()}`, 105, 32, { align: 'center' });
+
+          // Fecha
+          doc.text(`Fecha de Emisión: ${new Date().toLocaleDateString()}`, 180, 20, { align: 'right' });
+          
+          // Recuadro Principal (Beneficiario y Monto)
+          doc.setDrawColor(0);
+          doc.setFillColor(245, 247, 250);
+          doc.rect(15, 40, 180, 25, 'FD');
+          
+          doc.setFontSize(9);
+          doc.setTextColor(100);
+          doc.text("PAGADO A (BENEFICIARIO):", 20, 46);
+          
+          doc.setFontSize(12);
+          doc.setTextColor(0);
+          doc.setFont("helvetica", "bold");
+          doc.text(pago.proveedor.toUpperCase(), 20, 54);
+          
+          doc.setFontSize(9);
+          doc.setTextColor(100);
+          doc.text("MONTO TOTAL:", 140, 46);
+          
+          doc.setFontSize(14);
+          doc.setTextColor(0);
+          doc.text(`$${pago.monto.toFixed(2)}`, 140, 54);
+          
+          if(pago.montoBolivares > 0) {
+              doc.setFontSize(10);
+              doc.text(`(Bs. ${pago.montoBolivares.toFixed(2)})`, 140, 60);
+          }
+
+          // Detalles del Pago
+          const startY = 75;
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "bold");
+          doc.text("DETALLES DE LA TRANSACCIÓN", 15, startY);
+          
+          const detallesData = [
+              ['Concepto / Descripción', pago.descripcion],
+              ['Categoría Contable', pago.categoria],
+              ['Fecha del Pago', pago.fechaPago],
+              ['Método de Pago', pago.metodoPago],
+              ['Referencia / Banco', pago.referencia || 'N/A'],
+              ['Registrado Por', pago.registradoPor]
+          ];
+
+          autoTable(doc, {
+              startY: startY + 5,
+              body: detallesData,
+              theme: 'grid',
+              columnStyles: { 
+                  0: { cellWidth: 60, fontStyle: 'bold', fillColor: [240, 240, 240] },
+                  1: { cellWidth: 120 }
+              },
+              styles: { fontSize: 10, cellPadding: 3 }
+          });
+
+          // Zona de Firmas
+          const finalY = (doc as any).lastAutoTable.finalY + 40;
+          
+          doc.setLineWidth(0.5);
+          doc.line(20, finalY, 70, finalY);
+          doc.setFontSize(9);
+          doc.text("Elaborado Por", 45, finalY + 5, { align: 'center' });
+          doc.text(pago.registradoPor, 45, finalY + 10, { align: 'center' });
+
+          doc.line(80, finalY, 130, finalY);
+          doc.text("Aprobado Por", 105, finalY + 5, { align: 'center' });
+          doc.text("Administración", 105, finalY + 10, { align: 'center' });
+
+          doc.line(140, finalY, 190, finalY);
+          doc.text("Recibido Conforme", 165, finalY + 5, { align: 'center' });
+          doc.text("Beneficiario", 165, finalY + 10, { align: 'center' });
+
+          // Footer
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text("Este documento certifica la salida de fondos de la institución.", 105, 280, { align: 'center' });
+
+          doc.save(`Egreso_${pago.proveedor.replace(/\s+/g, '_')}_${pago.fechaPago}.pdf`);
+
+      } catch (e) {
+          console.error(e);
+          alert("Error generando comprobante.");
       }
   };
 
@@ -381,6 +486,7 @@ export const PagosServicios: React.FC = () => {
                                 <th className="px-6 py-3 text-right">Monto $</th>
                                 <th className="px-6 py-3 text-right">Monto Bs</th>
                                 <th className="px-6 py-3 text-center">Status Vencimiento</th>
+                                <th className="px-6 py-3 text-center">Comprobante</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -404,6 +510,15 @@ export const PagosServicios: React.FC = () => {
                                             ) : (
                                                 <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-[10px] font-bold">Vence en {diasRestantes} días</span>
                                             )}
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                            <button 
+                                                onClick={() => generarComprobanteEgreso(p)} 
+                                                className="text-gray-500 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
+                                                title="Imprimir Comprobante"
+                                            >
+                                                <Printer size={18} />
+                                            </button>
                                         </td>
                                     </tr>
                                 );
