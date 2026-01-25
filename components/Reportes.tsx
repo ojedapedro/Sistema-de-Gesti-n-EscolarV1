@@ -100,7 +100,8 @@ export const Reportes: React.FC = () => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
-  const hasApiKey = !!process.env.API_KEY || !!(window as any).process?.env?.API_KEY;
+  // Verificación simple de existencia de Key
+  const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
 
   useEffect(() => {
     cargarDatosGenerales();
@@ -495,20 +496,17 @@ export const Reportes: React.FC = () => {
   };
 
   const generarResumenIA = async () => {
-    let key = process.env.API_KEY;
-    if(!key || key.length < 10) {
-        key = (window as any).process?.env?.API_KEY;
-    }
-
-    if (!key) {
-        alert("Falta configuración de API Key para usar la IA.");
+    if (!process.env.API_KEY) {
+        setAiSummary("Error: API Key no configurada en el entorno.");
+        alert("Falta la API Key de Google Gemini.");
         return;
     }
 
     setLoading(true);
     setAiSummary(''); // Limpiar anterior
     try {
-      const ai = new GoogleGenAI({ apiKey: key });
+      // Inicialización correcta sin lógica compleja, confiando en el entorno
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let prompt = "";
       
@@ -550,9 +548,11 @@ export const Reportes: React.FC = () => {
         contents: prompt,
       });
       setAiSummary(response.text || "La IA no generó respuesta.");
-    } catch (error) {
-      console.error(error);
-      setAiSummary("Error conectando con el servicio de IA. Verifique su API Key o conexión.");
+    } catch (error: any) {
+      console.error("Error completo IA:", error);
+      // Mostrar el error específico de la API para facilitar la depuración
+      const msg = error.message || error.toString();
+      setAiSummary(`Error de conexión con IA: ${msg}`);
     } finally {
       setLoading(false);
     }
