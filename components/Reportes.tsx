@@ -100,8 +100,8 @@ export const Reportes: React.FC = () => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
-  // Verificación simple de existencia de Key
-  const hasApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY;
+  // Verificación de existencia de Key (solo para mostrar UI)
+  const hasApiKey = !!process.env.API_KEY;
 
   useEffect(() => {
     cargarDatosGenerales();
@@ -376,7 +376,7 @@ export const Reportes: React.FC = () => {
           });
 
           // --- AGREGAR INFORME IA AL PDF SI EXISTE ---
-          if (aiSummary) {
+          if (aiSummary && !aiSummary.startsWith("Error")) {
               doc.addPage();
               if (logo) doc.addImage(logo, 'PNG', 170, 10, 25, 25);
               
@@ -496,16 +496,15 @@ export const Reportes: React.FC = () => {
   };
 
   const generarResumenIA = async () => {
-    if (!process.env.API_KEY) {
-        setAiSummary("Error: API Key no configurada en el entorno.");
-        alert("Falta la API Key de Google Gemini.");
+    // Si la API Key no está definida o está vacía, mostramos error en la UI en lugar de Alert
+    if (!process.env.API_KEY || process.env.API_KEY === '') {
+        setAiSummary("Error de Configuración: No se ha detectado una API Key de Google Gemini. \n\nPor favor, configure la variable de entorno API_KEY en su plataforma de despliegue para habilitar esta función.");
         return;
     }
 
     setLoading(true);
     setAiSummary(''); // Limpiar anterior
     try {
-      // Inicialización correcta sin lógica compleja, confiando en el entorno
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let prompt = "";
@@ -550,9 +549,8 @@ export const Reportes: React.FC = () => {
       setAiSummary(response.text || "La IA no generó respuesta.");
     } catch (error: any) {
       console.error("Error completo IA:", error);
-      // Mostrar el error específico de la API para facilitar la depuración
       const msg = error.message || error.toString();
-      setAiSummary(`Error de conexión con IA: ${msg}`);
+      setAiSummary(`Error de conexión con el servicio de IA:\n${msg}\n\nVerifique su conexión a internet y que la API Key sea válida.`);
     } finally {
       setLoading(false);
     }
@@ -664,7 +662,7 @@ export const Reportes: React.FC = () => {
                                   <Loader2 className="animate-spin" size={20}/> Analizando datos...
                               </div>
                           ) : aiSummary ? (
-                              <p className="whitespace-pre-wrap leading-relaxed text-xs">{aiSummary}</p>
+                              <p className={`whitespace-pre-wrap leading-relaxed text-xs ${aiSummary.startsWith('Error') ? 'text-red-600 font-bold' : ''}`}>{aiSummary}</p>
                           ) : (
                               <p className="text-gray-400 italic text-center mt-10">
                                   Haga clic en "Generar Análisis" para obtener un informe de auditoría detallado.
@@ -679,7 +677,7 @@ export const Reportes: React.FC = () => {
                       >
                           {loading ? 'Procesando...' : <><Bot size={16}/> Generar Análisis</>}
                       </button>
-                      {aiSummary && (
+                      {aiSummary && !aiSummary.startsWith("Error") && (
                           <p className="text-[10px] text-indigo-500 mt-2 text-center">
                               * El informe se incluirá al descargar el PDF.
                           </p>
