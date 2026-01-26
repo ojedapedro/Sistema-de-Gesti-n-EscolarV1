@@ -1,201 +1,311 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
-import { RegistroPago, EstadoPago } from '../types';
-import { BookOpen, Download, TrendingUp, Calendar, Loader2 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { LOGO_URL } from '../constants';
+import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown } from 'lucide-react';
+import { EstadoPago, RegistroPago, Representante, NivelConfig } from '../types';
+import { MENSUALIDADES } from '../constants';
 
-// Helper
-const loadImage = (url: string): Promise<string | null> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.src = url;
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      } else {
-        resolve(null);
+export const Dashboard: React.FC = () => {
+  const [pagos, setPagos] = useState<RegistroPago[]>([]);
+  const [reps, setReps] = useState<Representante[]>([]);
+  const [niveles, setNiveles] = useState<NivelConfig[]>([]);
+  const [tasa, setTasa] = useState(0);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const cargarDatos = async () => {
+      try {
+        const [pData, rData, cData, nData] = await Promise.all([
+          db.getPagos(),
+          db.getRepresentantes(),
+          db.getConfig(),
+          db.getNiveles()
+        ]);
+        setPagos(pData);
+        setReps(rData);
+        setTasa(cData.tasaCambio);
+        setNiveles(nData);
+      } catch (e) {
+        console.error("Error cargando dashboard", e);
+      } finally {
+        setLoading(false);
       }
     };
-    img.onerror = () => resolve(null);
-  });
-};
+    cargarDatos();
+  }, []);
 
-export const LibroContable: React.FC = () => {
-  const [pagosVerificados, setPagosVerificados] = useState<RegistroPago[]>([]);
-  const [fechaFiltro, setFechaFiltro] = useState('');
-  const [loading, setLoading] = useState(true);
+  if (loading) return <div className="flex justify-center items-center h-[50vh]"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>;
 
-  const cargarDatos = async () => {
-    setLoading(true);
-    try {
-      const todos = await db.getPagos();
-      // Filtrar solo los verificados
-      let filtrados = todos.filter(p => p.estado === EstadoPago.VERIFICADO);
-
-      if (fechaFiltro) {
-          filtrados = filtrados.filter(p => p.fechaPago === fechaFiltro || p.fechaRegistro.startsWith(fechaFiltro));
-      }
-
-      filtrados.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setPagosVerificados(filtrados);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+  // --- Helper Meses Escolares ---
+  const getMesesEscolares = () => {
+    const now = new Date();
+    const currentMonth = now.getMonth(); 
+    let meses = 0;
+    if (currentMonth >= 8) { 
+       meses = currentMonth - 7; 
+    } else { 
+       meses = 4 + (currentMonth + 1);
     }
+    return Math.max(1, meses);
   };
 
-  useEffect(() => {
-    cargarDatos();
-  }, [fechaFiltro]);
+  // --- Cálculos Generales ---
+  const totalRecaudadoHistorico = pagos
+    .filter(p => p.estado === EstadoPago.VERIFICADO)
+    .reduce((sum, p) => sum + (p.monto || 0), 0);
 
-  const totalUSD = pagosVerificados.reduce((acc, p) => acc + (Number(p.monto) || 0), 0);
-  const totalBs = pagosVerificados.reduce((acc, p) => acc + (Number(p.montoBolivares) || 0), 0);
+  // Cálculo en Bs
+  const totalRecaudadoHistoricoBs = totalRecaudadoHistorico * (tasa || 0);
 
-  const descargarReporteLibro = async () => {
-    try {
-      const doc = new jsPDF();
-      
-      const logo = await loadImage(LOGO_URL);
-      if (logo) {
-          doc.addImage(logo, 'PNG', 170, 10, 25, 25);
-      }
+  const pagosPendientes = pagos.filter(p => p.estado === EstadoPago.PENDIENTE_VERIFICACION).length;
+  const totalAlumnos = reps.reduce((sum, r) => sum + r.alumnos.length, 0);
 
-      doc.setFontSize(16);
-      doc.text('Libro de Pagos Verificados (Ingresos)', 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Generado: ${new Date().toLocaleDateString()}`, 14, 28);
-      
-      const tableData = pagosVerificados.map(p => [
-          p.fechaPago,
-          p.nombreRepresentante,
-          p.metodoPago,
-          p.referencia,
-          `$${(p.monto || 0).toFixed(2)}`,
-          (p.montoBolivares && p.montoBolivares > 0) ? `Bs ${(p.montoBolivares).toFixed(2)}` : '-'
-      ]);
+  // --- Cálculo de Morosidad (Deuda Pendiente Global) ---
+  const mesesTranscurridos = getMesesEscolares();
+  let totalMorosidad = 0;
 
-      autoTable(doc, {
-          startY: 35,
-          head: [['Fecha', 'Representante', 'Método', 'Referencia', 'Monto USD', 'Monto Bs']],
-          body: tableData,
-          foot: [[ 'TOTALES', '', '', '', `$${totalUSD.toFixed(2)}`, `Bs ${totalBs.toFixed(2)}` ]],
-          theme: 'grid',
-          headStyles: { fillColor: [63, 81, 181] }, // Color Indigo
-          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' }
+  reps.forEach(rep => {
+      // 1. Calcular lo que debería haber pagado este representante hasta hoy
+      let deudaEsperadaRep = 0;
+      rep.alumnos.forEach(alu => {
+          const config = niveles.find(n => n.nivel === alu.nivel);
+          const precio = config ? config.precio : (MENSUALIDADES[alu.nivel] || 0);
+          deudaEsperadaRep += precio * mesesTranscurridos;
       });
 
-      doc.save(`libro_contable_${new Date().toISOString().split('T')[0]}.pdf`);
-    } catch (error) {
-      console.error("Error generando PDF:", error);
-      alert("Hubo un error al generar el archivo PDF. Revise la consola para más detalles.");
-    }
-  };
+      // 2. Calcular lo que ha pagado realmente
+      const totalPagadoRep = pagos
+        .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
+        .reduce((sum, p) => sum + (p.monto || 0), 0);
 
-  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>;
+      // 3. Calcular saldo. Si es positivo (debe), se suma a la morosidad global.
+      // Si es negativo (saldo a favor), NO resta la morosidad de otros.
+      const saldo = deudaEsperadaRep - totalPagadoRep;
+      if (saldo > 0) {
+          totalMorosidad += saldo;
+      }
+  });
+
+  // Cálculo en Bolívares de Morosidad
+  const totalMorosidadBs = Number(totalMorosidad) * Number(tasa || 0);
+
+
+  // --- Cálculos Mes Actual ---
+  const fechaActual = new Date();
+  const mesActualIdx = fechaActual.getMonth(); // 0-11
+  const anioActual = fechaActual.getFullYear();
+  const nombreMes = fechaActual.toLocaleString('es-ES', { month: 'long' });
+
+  // Filtrar pagos verificados de ESTE mes y ESTE año
+  const pagosDelMes = pagos.filter(p => {
+    if (p.estado !== EstadoPago.VERIFICADO) return false;
+    const parts = (p.fechaRegistro || '').split('-');
+    const year = parseInt(parts[0] || '0', 10);
+    const month = parseInt(parts[1] || '0', 10) - 1; // 0-based
+    return year === anioActual && month === mesActualIdx;
+  });
+
+  const totalMesUSD = pagosDelMes.reduce((acc, p) => acc + (p.monto || 0), 0);
+  const totalMesBs = pagosDelMes.reduce((acc, p) => acc + (p.montoBolivares || 0), 0);
+
+  // Datos para Gráfico Simple (Por Método de Pago en USD)
+  const metodosData = pagosDelMes.reduce((acc: Record<string, number>, p) => {
+    const key = String(p.metodoPago);
+    const current = acc[key] || 0;
+    acc[key] = current + (p.monto || 0);
+    return acc;
+  }, {} as Record<string, number>);
+
+  const values = Object.values(metodosData) as number[];
+  const maxValChart = values.length > 0 ? Math.max(...values, 1) : 1;
+  const metodosOrdenados = Object.entries(metodosData).sort((a,b) => b[1] - a[1]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6">
+    <div className="space-y-6 pb-20 md:pb-0">
+      {/* HEADER: Adaptable a móvil */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <BookOpen className="text-indigo-600" /> Libro de Cuentas (Verificadas)
-          </h2>
-          <p className="text-sm text-gray-500">Historial de todos los ingresos confirmados.</p>
+           <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
+           <p className="text-sm text-gray-500 md:hidden font-medium mt-1">{nombreMes} {anioActual}</p>
         </div>
         
-        <div className="flex gap-4 items-center">
-            <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                <input 
-                    type="date" 
-                    value={fechaFiltro}
-                    onChange={(e) => setFechaFiltro(e.target.value)}
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+        {/* Tarjeta de Tasa: Full width en móvil */}
+        <div className="w-full md:w-auto bg-white px-5 py-3 rounded-xl shadow-sm border border-indigo-100 flex justify-between md:justify-start items-center gap-4 transition-transform active:scale-[0.99]">
+            <div className="flex items-center gap-2">
+                <TrendingUp size={20} className="text-indigo-600"/>
+                <span className="text-sm font-medium text-gray-600">Tasa BCV:</span>
             </div>
-            <button 
-                onClick={descargarReporteLibro}
-                className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 flex items-center gap-2"
-            >
-                <Download size={16} /> Exportar
-            </button>
+            <span className="text-xl font-bold text-slate-800">Bs. {(tasa || 0).toFixed(2)}</span>
         </div>
       </div>
 
-      {/* Tarjetas de Totales */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-green-50 p-6 rounded-xl border border-green-100 flex items-center justify-between">
-            <div>
-                <p className="text-sm font-medium text-green-700 uppercase tracking-wider">Total Ingresos USD</p>
-                <h3 className="text-3xl font-bold text-green-800 mt-1">${(totalUSD || 0).toFixed(2)}</h3>
+      {/* Tarjetas Principales (KPIs Globales) - Grid responsive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-green-100 rounded-full text-green-600 flex-shrink-0">
+                <Banknote size={28} />
             </div>
-            <div className="p-3 bg-green-200 rounded-full text-green-700">
-                <TrendingUp size={24} />
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Recaudado Histórico</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 truncate">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-green-600 truncate">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
         </div>
-        <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 flex items-center justify-between">
-            <div>
-                <p className="text-sm font-medium text-blue-700 uppercase tracking-wider">Total Ingresos Bs (Recibidos)</p>
-                <h3 className="text-3xl font-bold text-blue-800 mt-1">Bs. {(totalBs || 0).toFixed(2)}</h3>
+
+        {/* NUEVA TARJETA: Morosidad */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-red-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-red-100 rounded-full text-red-600 flex-shrink-0">
+                <TrendingDown size={28} />
             </div>
-            <div className="p-3 bg-blue-200 rounded-full text-blue-700">
-                <TrendingUp size={24} />
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Morosidad Global</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-red-600 truncate">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-red-500 truncate">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
+            </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-yellow-100 rounded-full text-yellow-600 flex-shrink-0">
+                <AlertCircle size={28} />
+            </div>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Pagos Pendientes</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{pagosPendientes}</h3>
+                <p className="text-xs text-gray-400 mt-1 truncate">Requieren verificación</p>
+            </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-indigo-100 rounded-full text-indigo-600 flex-shrink-0">
+                <Users size={28} />
+            </div>
+            <div className="min-w-0">
+                <p className="text-sm text-gray-500 font-medium truncate">Estudiantes Activos</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{totalAlumnos}</h3>
+                <p className="text-xs text-gray-400 mt-1 truncate">{reps.length} Familias</p>
             </div>
         </div>
       </div>
+      
+      {/* SECCIÓN: Resumen del Mes Actual */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tarjeta de Totales del Mes */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-6 border-b pb-2">
+            <Calendar className="text-indigo-600" size={20} /> 
+            <span className="truncate">Resumen: <span className="capitalize">{nombreMes}</span></span>
+          </h3>
+          
+          {/* Grilla flexible: 1 columna en móvil, 2 en tablet+ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+             {/* Total USD */}
+             <div className="bg-green-50 rounded-xl p-4 border border-green-100 relative overflow-hidden">
+                <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
+                   <DollarSign size={64} className="text-green-800" />
+                </div>
+                <p className="text-xs font-bold text-green-700 uppercase tracking-wide">Total USD ($)</p>
+                <h4 className="text-3xl font-extrabold text-green-800 mt-2">
+                  ${totalMesUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </h4>
+                <div className="mt-3 w-full bg-green-200 rounded-full h-1.5">
+                  <div className="bg-green-600 h-1.5 rounded-full" style={{ width: '100%' }}></div>
+                </div>
+             </div>
 
-      {/* Tabla */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-500">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3">Fecha Pago</th>
-                <th className="px-6 py-3">Representante / Cédula</th>
-                <th className="px-6 py-3">Método</th>
-                <th className="px-6 py-3 text-right">Monto (USD)</th>
-                <th className="px-6 py-3 text-right">Monto (Bs)</th>
-              </tr>
-            </thead>
-            <tbody>
-                {pagosVerificados.length === 0 ? (
-                     <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400">No hay pagos verificados para mostrar.</td></tr>
-                ) : (
-                    pagosVerificados.map(pago => (
-                        <tr key={pago.id} className="bg-white border-b hover:bg-gray-50">
-                            <td className="px-6 py-4">{pago.fechaPago}</td>
-                            <td className="px-6 py-4">
-                                <div className="font-medium text-gray-900">{pago.nombreRepresentante}</div>
-                                <div className="text-xs text-gray-400">{pago.cedulaRepresentante}</div>
-                            </td>
-                            <td className="px-6 py-4">
-                                <span className="block text-gray-700">{pago.metodoPago}</span>
-                                <span className="text-xs font-mono text-gray-400">Ref: {pago.referencia}</span>
-                            </td>
-                            <td className="px-6 py-4 text-right font-bold text-gray-900">${(pago.monto || 0).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-gray-600">
-                                {(pago.montoBolivares && pago.montoBolivares > 0) ? (
-                                    <span className="font-medium text-blue-600">Bs. {pago.montoBolivares.toFixed(2)}</span>
-                                ) : (
-                                    <span className="text-gray-300">-</span>
-                                )}
+             {/* Total BS */}
+             <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 relative overflow-hidden">
+                <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
+                   <Wallet size={64} className="text-blue-800" />
+                </div>
+                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Total Bolívares</p>
+                <h4 className="text-2xl font-extrabold text-blue-800 mt-2 truncate" title={totalMesBs.toFixed(2)}>
+                  Bs. {totalMesBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                </h4>
+                <div className="mt-3 w-full bg-blue-200 rounded-full h-1.5">
+                  <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: '100%' }}></div>
+                </div>
+             </div>
+          </div>
+        </div>
+
+        {/* Gráfico Simple: Distribución por Método */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4 border-b pb-2">
+            <PieChart className="text-indigo-600" size={20} /> 
+            Ingresos por Método
+          </h3>
+          
+          <div className="space-y-4">
+             {metodosOrdenados.length === 0 ? (
+               <div className="text-center text-gray-400 py-8">No hay registros este mes.</div>
+             ) : (
+               metodosOrdenados.map(([metodo, monto]) => {
+                 const montoNum = Number(monto);
+                 const porcentaje = Math.round((montoNum / totalMesUSD) * 100);
+                 const anchoBarra = Math.round((montoNum / maxValChart) * 100); 
+                 return (
+                   <div key={metodo}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium text-gray-700 truncate pr-2">{metodo}</span>
+                        <span className="font-bold text-gray-900 whitespace-nowrap">${montoNum.toLocaleString()} ({porcentaje}%)</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                        <div 
+                          className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+                          style={{ width: `${anchoBarra}%` }}
+                        ></div>
+                      </div>
+                   </div>
+                 );
+               })
+             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabla Últimos Movimientos */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+         <div className="p-5 border-b border-gray-100 bg-gray-50">
+            <h3 className="font-bold text-gray-700 flex items-center gap-2"><Calendar size={20}/> Últimos Movimientos</h3>
+         </div>
+         <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-gray-500">
+                <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                    <tr>
+                        <th className="px-6 py-3 whitespace-nowrap">Fecha</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Representante</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Método</th>
+                        <th className="px-6 py-3 whitespace-nowrap">Ref</th>
+                        <th className="px-6 py-3 text-right whitespace-nowrap">Monto</th>
+                        <th className="px-6 py-3 text-center whitespace-nowrap">Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {pagos.slice(-10).reverse().map((p, i) => (
+                        <tr key={i} className="bg-white border-b hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">{p.fechaRegistro}</td>
+                            <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{p.nombreRepresentante}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">{p.metodoPago}</td>
+                            <td className="px-6 py-4 font-mono text-xs whitespace-nowrap">{p.referencia}</td>
+                            <td className="px-6 py-4 text-right font-bold whitespace-nowrap">${(p.monto || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                    p.estado === EstadoPago.VERIFICADO 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : p.estado === EstadoPago.RECHAZADO
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                    {p.estado}
+                                </span>
                             </td>
                         </tr>
-                    ))
-                )}
-            </tbody>
-          </table>
-        </div>
+                    ))}
+                    {pagos.length === 0 && (
+                        <tr><td colSpan={6} className="px-6 py-8 text-center">No hay registros aún.</td></tr>
+                    )}
+                </tbody>
+            </table>
+         </div>
       </div>
     </div>
   );
