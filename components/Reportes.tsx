@@ -100,7 +100,7 @@ export const Reportes: React.FC = () => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
-  // Verificación de existencia de Key (solo para mostrar UI opcional, no bloqueante)
+  // Verificación de existencia de Key (para mostrar UI)
   const hasApiKey = !!process.env.API_KEY;
 
   useEffect(() => {
@@ -496,14 +496,16 @@ export const Reportes: React.FC = () => {
   };
 
   const generarResumenIA = async () => {
-    // SE ELIMINÓ EL BLOQUEO: Permitimos que el SDK intente conectar. 
-    // Si la key es inválida, el SDK lanzará una excepción que capturaremos.
-    
+    // Verificar explícitamente si existe la Key antes de intentar conectar
+    if (!process.env.API_KEY || process.env.API_KEY === '') {
+        setAiSummary("Error de Configuración: No se ha detectado una API Key de Google Gemini.\n\nPor favor, configure la variable de entorno API_KEY en su plataforma de despliegue para habilitar esta función.");
+        return;
+    }
+
     setLoading(true);
     setAiSummary(''); // Limpiar anterior
     try {
-      // Usamos el operador OR '' para asegurar que sea string, aunque falle después si está vacío.
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let prompt = "";
       
@@ -548,9 +550,9 @@ export const Reportes: React.FC = () => {
     } catch (error: any) {
       console.error("Error completo IA:", error);
       const msg = error.message || error.toString();
-      // Mensaje amigable si falla la autenticación
-      if (msg.includes("API key not valid") || msg.includes("API_KEY")) {
-          setAiSummary(`Error de Autenticación: La API Key proporcionada no es válida o no está configurada.\n\nDetalle: ${msg}`);
+      
+      if (msg.includes("API key")) {
+          setAiSummary("Error de Autenticación: La API Key proporcionada no es válida o ha sido revocada.");
       } else {
           setAiSummary(`Error de conexión con el servicio de IA:\n${msg}`);
       }
