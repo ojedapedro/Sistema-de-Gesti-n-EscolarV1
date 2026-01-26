@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, Scale, AlertCircle, Sparkles } from 'lucide-react';
+import { Download, Bot, RefreshCw, Loader2, FileText, Filter, DollarSign, CheckCircle, XCircle, ChevronDown, ChevronUp, PieChart, TrendingUp, TrendingDown, Scale, AlertCircle, Sparkles, Key } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { RegistroPago, Representante, EstadoPago, NivelConfig, NivelEducativo, PagoServicio, RegistroNomina, MovimientoInventario, TipoMovimiento } from '../types';
 import { MENSUALIDADES, LOGO_URL } from '../constants';
@@ -100,8 +100,24 @@ export const Reportes: React.FC = () => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   
-  // Verificación de existencia de Key (para mostrar UI)
-  const hasApiKey = !!process.env.API_KEY;
+  // Manejo de API Key Manual
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [manualKey, setManualKey] = useState('');
+
+  // Helper para obtener la clave efectiva (Env o LocalStorage)
+  const getEffectiveApiKey = (): string | null => {
+    // 1. Prioridad: Variable de entorno válida
+    const envKey = process.env.API_KEY;
+    if (envKey && envKey !== '' && !envKey.includes('PEGAR_AQUI')) {
+        return envKey;
+    }
+    // 2. Fallback: LocalStorage
+    const localKey = localStorage.getItem('gemini_api_key');
+    if (localKey && localKey.startsWith('AIza')) {
+        return localKey;
+    }
+    return null;
+  };
 
   useEffect(() => {
     cargarDatosGenerales();
@@ -495,11 +511,23 @@ export const Reportes: React.FC = () => {
     }
   };
 
+  const handleSaveManualKey = () => {
+      if(!manualKey.trim().startsWith('AIza')) {
+          alert("La clave debe comenzar por 'AIza...'. Verifique en Google AI Studio.");
+          return;
+      }
+      localStorage.setItem('gemini_api_key', manualKey.trim());
+      setShowKeyInput(false);
+      alert("Clave guardada en el navegador. Intente generar el análisis nuevamente.");
+  };
+
   const generarResumenIA = async () => {
-    // Verificar si la clave es la por defecto o está vacía
-    const apiKey = process.env.API_KEY;
-    if (!apiKey || apiKey === '' || apiKey.includes('PEGAR_AQUI')) {
-        setAiSummary("Error de Configuración: La API Key no está configurada.\n\nPor favor, edite el archivo 'index.html' y pegue su API Key de Google AI Studio donde se indica.");
+    // 1. Obtener clave efectiva
+    const apiKey = getEffectiveApiKey();
+
+    if (!apiKey) {
+        setAiSummary("Error: No se detectó una API Key válida. Por favor configúrela.");
+        setShowKeyInput(true);
         return;
     }
 
@@ -552,8 +580,10 @@ export const Reportes: React.FC = () => {
       console.error("Error completo IA:", error);
       const msg = error.message || error.toString();
       
-      if (msg.includes("API key")) {
-          setAiSummary("Error de Autenticación: La API Key proporcionada en index.html no es válida.");
+      if (msg.includes("API key") || msg.includes("403")) {
+          setAiSummary("Error de Autenticación: La clave proporcionada no es válida. Intente configurarla nuevamente.");
+          localStorage.removeItem('gemini_api_key'); // Limpiar clave inválida
+          setShowKeyInput(true);
       } else {
           setAiSummary(`Error de conexión con el servicio de IA:\n${msg}`);
       }
@@ -662,10 +692,23 @@ export const Reportes: React.FC = () => {
                           <h3 className="font-bold text-indigo-900 leading-tight">Análisis Financiero Inteligente (Mes)</h3>
                       </div>
                       
-                      <div className="flex-1 overflow-y-auto min-h-[150px] mb-4 text-sm text-slate-700 bg-white/60 p-3 rounded border border-indigo-100">
+                      <div className="flex-1 overflow-y-auto min-h-[150px] mb-4 text-sm text-slate-700 bg-white/60 p-3 rounded border border-indigo-100 relative">
                           {loading && !aiSummary ? (
                               <div className="flex items-center gap-2 text-indigo-600 h-full justify-center">
                                   <Loader2 className="animate-spin" size={20}/> Analizando datos...
+                              </div>
+                          ) : showKeyInput ? (
+                              <div className="flex flex-col h-full justify-center space-y-2 animate-in fade-in">
+                                  <p className="text-orange-600 text-xs font-bold flex items-center gap-1"><Key size={14}/> Configuración Requerida</p>
+                                  <p className="text-xs text-gray-600">Pegue su API Key de Google AI Studio para activar la IA:</p>
+                                  <input 
+                                    type="password" 
+                                    value={manualKey} 
+                                    onChange={(e) => setManualKey(e.target.value)}
+                                    placeholder="AIza..."
+                                    className="w-full border border-orange-300 rounded p-1.5 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                                  />
+                                  <button onClick={handleSaveManualKey} className="bg-slate-800 text-white text-xs py-1.5 rounded hover:bg-slate-700">Guardar Clave</button>
                               </div>
                           ) : aiSummary ? (
                               <p className={`whitespace-pre-wrap leading-relaxed text-xs ${aiSummary.startsWith('Error') ? 'text-red-600 font-bold' : ''}`}>{aiSummary}</p>
@@ -678,7 +721,7 @@ export const Reportes: React.FC = () => {
 
                       <button 
                           onClick={generarResumenIA}
-                          disabled={loading}
+                          disabled={loading || showKeyInput}
                           className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-50 text-sm flex justify-center items-center gap-2"
                       >
                           {loading ? 'Procesando...' : <><Bot size={16}/> Generar Análisis</>}
@@ -953,14 +996,34 @@ export const Reportes: React.FC = () => {
       )}
 
       {/* Sección IA (Solo si no es Balance, ya que Balance tiene su propia UI) */}
-      {hasApiKey && tipoReporte !== 'BALANCE' && (
+      {(tipoReporte !== 'BALANCE') && (
         <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 mt-6">
             <h3 className="font-bold text-indigo-900 flex items-center gap-2 mb-2"><Bot size={20}/> Análisis IA</h3>
             <p className="text-sm text-indigo-700 mb-4">Genera un resumen ejecutivo basado en los datos visualizados.</p>
-            {aiSummary && <p className="bg-white p-4 rounded text-sm text-gray-700 mb-4 whitespace-pre-wrap">{aiSummary}</p>}
-            <button onClick={generarResumenIA} disabled={loading} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
-                {loading ? 'Analizando...' : 'Generar Análisis'}
-            </button>
+            
+            {showKeyInput ? (
+                <div className="bg-white p-4 rounded border border-orange-200 mb-4">
+                    <p className="text-orange-700 text-xs font-bold mb-2 flex items-center gap-1"><Key size={14}/> Configuración Requerida</p>
+                    <p className="text-xs text-gray-600 mb-2">Para usar esta función, pegue su API Key de Google AI Studio:</p>
+                    <div className="flex gap-2">
+                        <input 
+                            type="password" 
+                            value={manualKey} 
+                            onChange={(e) => setManualKey(e.target.value)}
+                            placeholder="AIzaSy..."
+                            className="flex-1 border border-gray-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button onClick={handleSaveManualKey} className="bg-slate-800 text-white px-4 py-2 rounded text-xs hover:bg-slate-700">Guardar</button>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    {aiSummary && <p className="bg-white p-4 rounded text-sm text-gray-700 mb-4 whitespace-pre-wrap">{aiSummary}</p>}
+                    <button onClick={generarResumenIA} disabled={loading} className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
+                        {loading ? 'Analizando...' : 'Generar Análisis'}
+                    </button>
+                </>
+            )}
         </div>
       )}
     </div>
