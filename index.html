@@ -8,8 +8,17 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <script>
-      // Polyfill esencial para evitar errores con librerías que buscan process.env
-      window.process = window.process || { env: { API_KEY: 'AIzaSyBQvQOTpPdBn07bz-M_CEzZ6Fww9HN2ftc' } };
+      // --- CONFIGURACIÓN DE API KEY ---
+      // Pega aquí la clave que copiaste de Google AI Studio.
+      // Debe quedar entre comillas, ejemplo: 'AIzaSyD...'
+      const MY_API_KEY = 'AIzaSyBhzSv13wzns1ylqSIh72caX52hGcuY-ZY'; 
+
+      // Polyfill para inyectar la clave en el entorno de la app
+      window.process = { 
+        env: { 
+          API_KEY: MY_API_KEY 
+        } 
+      };
     </script>
 
     <script type="importmap">
@@ -28,11 +37,9 @@
   }
 }
 </script>
-  <link rel="stylesheet" href="/index.css">
-</head>
+  </head>
   <body class="bg-gray-50 text-slate-900 antialiased">
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>

@@ -496,16 +496,17 @@ export const Reportes: React.FC = () => {
   };
 
   const generarResumenIA = async () => {
-    // Verificar explícitamente si existe la Key antes de intentar conectar
-    if (!process.env.API_KEY || process.env.API_KEY === '') {
-        setAiSummary("Error de Configuración: No se ha detectado una API Key de Google Gemini.\n\nPor favor, configure la variable de entorno API_KEY en su plataforma de despliegue para habilitar esta función.");
+    // Verificar si la clave es la por defecto o está vacía
+    const apiKey = process.env.API_KEY;
+    if (!apiKey || apiKey === '' || apiKey.includes('PEGAR_AQUI')) {
+        setAiSummary("Error de Configuración: La API Key no está configurada.\n\nPor favor, edite el archivo 'index.html' y pegue su API Key de Google AI Studio donde se indica.");
         return;
     }
 
     setLoading(true);
     setAiSummary(''); // Limpiar anterior
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       
       let prompt = "";
       
@@ -552,7 +553,7 @@ export const Reportes: React.FC = () => {
       const msg = error.message || error.toString();
       
       if (msg.includes("API key")) {
-          setAiSummary("Error de Autenticación: La API Key proporcionada no es válida o ha sido revocada.");
+          setAiSummary("Error de Autenticación: La API Key proporcionada en index.html no es válida.");
       } else {
           setAiSummary(`Error de conexión con el servicio de IA:\n${msg}`);
       }
