@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { Representante, RegistroPago, MetodoPago, EstadoPago, NivelConfig } from '../types';
-import { Search, CreditCard, DollarSign, CheckCircle, Printer, Loader2, AlertTriangle, FileText, ArrowRight, Wallet, Calculator, Clock, Calendar, Edit, Percent, ToggleLeft, ToggleRight, Download } from 'lucide-react';
+import { Search, CreditCard, DollarSign, CheckCircle, Printer, Loader2, AlertTriangle, FileText, ArrowRight, Wallet, Calculator, Clock, Calendar, Edit, Percent, ToggleLeft, ToggleRight, Download, BarChart3 } from 'lucide-react';
 import { MENSUALIDADES, ANIO_ESCOLAR_ACTUAL, REQUIERE_VERIFICACION, LOGO_URL } from '../constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,7 +30,7 @@ const loadImage = (url: string): Promise<string | null> => {
 };
 
 export const Pagos: React.FC = () => {
-    // Estados
+    // Estados Principales
     const [cedulaBusqueda, setCedulaBusqueda] = useState('');
     const [representante, setRepresentante] = useState<Representante | null>(null);
     const [historialPagos, setHistorialPagos] = useState<RegistroPago[]>([]);
@@ -40,7 +40,10 @@ export const Pagos: React.FC = () => {
     const [nivelesConfig, setNivelesConfig] = useState<NivelConfig[]>([]);
     const [loading, setLoading] = useState(false);
     const [searching, setSearching] = useState(false);
+    
+    // Estados para Cierre de Caja
     const [loadingCierre, setLoadingCierre] = useState(false);
+    const [fechaCierre, setFechaCierre] = useState(new Date().toISOString().split('T')[0]);
     
     // Formulario de Pago
     const [metodo, setMetodo] = useState<MetodoPago>(MetodoPago.PAGO_MOVIL);
@@ -52,10 +55,7 @@ export const Pagos: React.FC = () => {
     // Estado Pronto Pago
     const [aplicarProntoPago, setAplicarProntoPago] = useState(false);
 
-    // Estado para Cierre de Caja
-    const [fechaCierre, setFechaCierre] = useState(new Date().toISOString().split('T')[0]);
-
-    // Estado calculado (asíncrono)
+    // Estado calculado (asíncrono) para deuda
     const [saldoReal, setSaldoReal] = useState(0);
 
     // Cargar Configuración Inicial
@@ -159,8 +159,6 @@ export const Pagos: React.FC = () => {
         let concepto = "Cancelación Total Deuda";
 
         if (aplicarProntoPago && descuentoTotal > 0) {
-            // Restamos el descuento al total de la deuda
-            // (Asumiendo que el pronto pago aplica a la cuota actual)
             totalAPagar = Math.max(0, desgloseDeuda.total - descuentoTotal);
             concepto = `Mensualidad (Inc. Desc. Pronto Pago $${descuentoTotal})`;
         }
@@ -177,6 +175,156 @@ export const Pagos: React.FC = () => {
         if(input) input.focus();
     };
 
+    // --- GENERAR REPORTE DE CIERRE DE CAJA ---
+    const generarCierreDiario = async () => {
+        setLoadingCierre(true);
+        try {
+            const allPagos = await db.getPagos();
+            
+            // 1. Filtrar pagos: Fecha seleccionada y estado VERIFICADO
+            // Esto incluye pagos registrados en caja hoy Y pagos de Oficina Virtual verificados hoy
+            const pagosCierre = allPagos.filter(p => 
+                p.fechaRegistro === fechaCierre && 
+                p.estado === EstadoPago.VERIFICADO
+            );
+
+            if (pagosCierre.length === 0) {
+                alert("No hay transacciones verificadas para la fecha seleccionada.");
+                setLoadingCierre(false);
+                return;
+            }
+
+            // 2. Agrupar para Resumen
+            const resumen: Record<string, { count: number, usd: number, bs: number }> = {};
+            let granTotalUSD = 0;
+            let granTotalBS = 0;
+
+            pagosCierre.forEach(p => {
+                const metodo = p.metodoPago;
+                if (!resumen[metodo]) resumen[metodo] = { count: 0, usd: 0, bs: 0 };
+                
+                resumen[metodo].count++;
+                resumen[metodo].usd += (p.monto || 0);
+                resumen[metodo].bs += (p.montoBolivares || 0);
+
+                granTotalUSD += (p.monto || 0);
+                granTotalBS += (p.montoBolivares || 0);
+            });
+
+            // 3. Crear PDF
+            const doc = new jsPDF();
+            const logo = await loadImage(LOGO_URL);
+            const pageWidth = doc.internal.pageSize.width;
+
+            // Header
+            doc.setFillColor(40, 40, 60); // Gris oscuro
+            doc.rect(0, 0, pageWidth, 40, 'F');
+            
+            if (logo) doc.addImage(logo, 'PNG', 15, 5, 30, 30);
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text("REPORTE DE CIERRE DE CAJA DIARIO", pageWidth / 2, 20, { align: 'center' });
+            
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "normal");
+            doc.text(`Fecha de Cierre: ${fechaCierre}`, pageWidth / 2, 28, { align: 'center' });
+            doc.text(`Generado: ${new Date().toLocaleTimeString()}`, pageWidth / 2, 33, { align: 'center' });
+
+            // RESUMEN GENERAL
+            doc.setTextColor(0);
+            doc.setFontSize(12);
+            doc.setFont("helvetica", "bold");
+            doc.text("1. RESUMEN CONSOLIDADO POR MÉTODO", 14, 55);
+
+            const resumenRows = Object.entries(resumen).map(([metodo, datos]) => [
+                metodo,
+                datos.count,
+                `$${datos.usd.toFixed(2)}`,
+                `Bs. ${datos.bs.toFixed(2)}`
+            ]);
+
+            // Fila Total
+            resumenRows.push(['TOTAL GENERAL', pagosCierre.length, `$${granTotalUSD.toFixed(2)}`, `Bs. ${granTotalBS.toFixed(2)}`]);
+
+            autoTable(doc, {
+                startY: 60,
+                head: [['Método de Pago', 'Cant.', 'Total USD', 'Total Bs']],
+                body: resumenRows,
+                theme: 'grid',
+                headStyles: { fillColor: [60, 60, 60] },
+                columnStyles: { 0: { cellWidth: 70 }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+                didParseCell: (data) => {
+                    if (data.row.index === resumenRows.length - 1) {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = [220, 220, 220];
+                    }
+                }
+            });
+
+            // DETALLE TRANSACCIONES
+            const finalY1 = (doc as any).lastAutoTable.finalY + 15;
+            doc.text("2. DETALLE DE OPERACIONES (Incluye Oficina Virtual)", 14, finalY1);
+
+            const detalleRows = pagosCierre.map(p => {
+                // Hora aproximada si existe timestamp
+                let hora = "";
+                try {
+                    if (p.timestamp) hora = new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch(e) {}
+
+                // Marcar si es OV
+                const esOV = p.referencia.startsWith('OV-') ? '(OV)' : '';
+
+                return [
+                    hora,
+                    p.referencia,
+                    p.nombreRepresentante.substring(0, 25), // Truncar
+                    p.mes + (esOV ? ` ${esOV}` : ''),
+                    p.metodoPago,
+                    `$${(p.monto || 0).toFixed(2)}`
+                ];
+            });
+
+            autoTable(doc, {
+                startY: finalY1 + 5,
+                head: [['Hora', 'Ref', 'Representante', 'Concepto', 'Método', 'Monto']],
+                body: detalleRows,
+                theme: 'striped',
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [63, 81, 181] },
+                columnStyles: { 5: { halign: 'right', fontStyle: 'bold' } }
+            });
+
+            // FIRMAS
+            const finalY2 = (doc as any).lastAutoTable.finalY + 40;
+            
+            // Nueva página si no cabe
+            if (finalY2 > 250) doc.addPage();
+            
+            const firmaPos = finalY2 > 250 ? 40 : finalY2;
+
+            doc.setLineWidth(0.5);
+            doc.setDrawColor(0);
+            
+            doc.line(30, firmaPos, 90, firmaPos);
+            doc.setFontSize(10);
+            doc.text("Cajero(a) Responsable", 60, firmaPos + 5, { align: 'center' });
+
+            doc.line(120, firmaPos, 180, firmaPos);
+            doc.text("Supervisor / Administración", 150, firmaPos + 5, { align: 'center' });
+
+            doc.save(`Cierre_Caja_${fechaCierre}.pdf`);
+
+        } catch (e) {
+            console.error(e);
+            alert("Error generando el cierre de caja.");
+        } finally {
+            setLoadingCierre(false);
+        }
+    };
+
     const ejecutarGuardadoPago = async () => {
         if (!representante || !monto || !referencia) {
             alert("Complete los datos obligatorios del pago (Monto y Referencia).");
@@ -189,19 +337,14 @@ export const Pagos: React.FC = () => {
             const esPagoBs = [MetodoPago.PAGO_MOVIL, MetodoPago.TRANSFERENCIA, MetodoPago.TDD].includes(metodo);
             const montoBs = esPagoBs ? (montoNum * tasaCambio) : undefined;
             
-            // Lógica de verificación automática vs manual
             const esOficinaVirtual = referencia.trim().toUpperCase().startsWith('OV-');
             const estadoInicial = esOficinaVirtual ? EstadoPago.PENDIENTE_VERIFICACION : EstadoPago.VERIFICADO;
 
-            // Determinar si es Abono automáticamente
-            // Si aplicó pronto pago, el "Total Esperado" para considerar cancelación es (Deuda - Descuento)
             const deudaConsiderada = aplicarProntoPago ? (saldoReal - descuentoTotal) : saldoReal;
-            // Permitimos un margen de error de 0.1 por decimales
             const esAbono = deudaConsiderada - montoNum > 0.1;
             
             let conceptoFinal = conceptoMes || (esAbono ? 'Abono Parcial' : 'Cancelación Mensualidad');
             
-            // Agregar nota de descuento si aplica y no está en el concepto
             if (aplicarProntoPago && !conceptoFinal.includes('Desc')) {
                 conceptoFinal += ` (Desc. Pronto Pago Aplicado)`;
             }
@@ -227,22 +370,16 @@ export const Pagos: React.FC = () => {
             };
 
             await db.savePago(nuevoPago);
-            
-            // Actualizar UI
             setHistorialPagos([nuevoPago, ...historialPagos]);
             
             alert(`Pago registrado con éxito. Estado: ${estadoInicial}`);
             
-            // Generar Recibo si es Verificado
             if (estadoInicial === EstadoPago.VERIFICADO) {
                  if(window.confirm(`¿Desea descargar el recibo de ${esAbono ? 'Abono' : 'Pago'} ahora?`)) {
-                     // saldoReal es la deuda ANTES del pago.
-                     // Pasamos saldoReal como saldoAnterior.
                      generarRecibo(nuevoPago, saldoReal);
                  }
             }
             
-            // Limpiar campos
             setMonto('');
             setReferencia('');
             setObservacion('');
@@ -262,13 +399,11 @@ export const Pagos: React.FC = () => {
         const logo = await loadImage(LOGO_URL);
         const pageWidth = doc.internal.pageSize.width;
         
-        // Cálculos para el recibo
         const saldoRestante = Math.max(0, saldoAnterior - (pago.monto || 0));
-        const esAbono = saldoRestante > 1; // Margen de $1
+        const esAbono = saldoRestante > 1; 
         const tituloRecibo = esAbono ? "RECIBO DE ABONO" : "RECIBO DE PAGO (CANCELACIÓN TOTAL)";
 
-        // --- HEADER ---
-        doc.setFillColor(63, 81, 181); // Indigo
+        doc.setFillColor(63, 81, 181); 
         doc.rect(0, 0, pageWidth, 40, 'F');
         
         if (logo) doc.addImage(logo, 'PNG', 10, 5, 30, 30);
@@ -279,12 +414,10 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(10);
         doc.text("Comprobante de Ingreso - Caja Administrativa", pageWidth / 2, 30, { align: 'center' });
 
-        // --- INFO GENERAL ---
         doc.setTextColor(0, 0, 0);
         doc.text(`Fecha: ${pago.fechaPago}`, 14, 50);
         doc.text(`Control N°: ${pago.id.substring(0, 8).toUpperCase()}`, 14, 56);
         
-        // --- DATOS REPRESENTANTE ---
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
         doc.text("DATOS DEL REPRESENTANTE", 14, 66);
@@ -294,7 +427,6 @@ export const Pagos: React.FC = () => {
         doc.text(`Cédula: ${representante.cedula}`, 14, 78);
         doc.text(`Matrícula: ${representante.matricula}`, 14, 84);
 
-        // --- DETALLES PAGO ---
         autoTable(doc, {
             startY: 90,
             head: [['Concepto / Mes', 'Método de Pago', 'Referencia', 'Monto ($)', 'Monto (Bs)']],
@@ -309,7 +441,6 @@ export const Pagos: React.FC = () => {
             headStyles: { fillColor: [40, 40, 40] }
         });
 
-        // --- CAJA DE SALDOS (EL REQUERIMIENTO PRINCIPAL) ---
         const finalY = (doc as any).lastAutoTable.finalY + 10;
         
         doc.setFillColor(245, 247, 250);
@@ -323,21 +454,17 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(10);
         doc.setFont("helvetica", "normal");
         
-        // Saldo Anterior
         doc.text("Deuda Anterior Estimada:", 20, finalY + 20);
         doc.text(`$${saldoAnterior.toFixed(2)}`, 180, finalY + 20, { align: 'right' });
         
-        // Abono
         doc.text("(-) Monto Abonado Hoy:", 20, finalY + 28);
         doc.setTextColor(0, 128, 0); // Verde
         doc.setFont("helvetica", "bold");
         doc.text(`$${(pago.monto || 0).toFixed(2)}`, 180, finalY + 28, { align: 'right' });
         
-        // Línea divisoria
         doc.setDrawColor(150);
         doc.line(20, finalY + 32, 185, finalY + 32);
         
-        // Saldo Pendiente
         doc.setTextColor(0);
         const labelSaldo = saldoRestante > 1 ? "SALDO PENDIENTE (DEUDA):" : "SALDO RESTANTE (SOLVENTE):";
         doc.text(labelSaldo, 20, finalY + 40);
@@ -345,11 +472,9 @@ export const Pagos: React.FC = () => {
         if (saldoRestante > 1) doc.setTextColor(200, 0, 0); // Rojo
         else doc.setTextColor(0, 0, 150); // Azul
         
-        // Si aplicó descuento y quedó solvente, mostrar 0.00
         const displaySaldo = saldoRestante < 1 ? 0 : saldoRestante;
         doc.text(`$${displaySaldo.toFixed(2)}`, 180, finalY + 40, { align: 'right' });
 
-        // --- PIE ---
         doc.setTextColor(150);
         doc.setFontSize(8);
         doc.setFont("helvetica", "normal");
@@ -358,182 +483,39 @@ export const Pagos: React.FC = () => {
         doc.save(`Recibo_${pago.cedulaRepresentante}_${pago.id.substring(0,8)}.pdf`);
     };
 
-    // --- REPORTE DE CIERRE DE CAJA ---
-    const generarCierreDiario = async () => {
-        setLoadingCierre(true);
-        try {
-            const allPagos = await db.getPagos();
-            
-            // 1. Filtrar pagos del día seleccionado (fechaRegistro)
-            const pagosDelDia = allPagos.filter(p => p.fechaRegistro === fechaCierre && p.estado === EstadoPago.VERIFICADO);
-            
-            if (pagosDelDia.length === 0) {
-                alert("No hay pagos registrados para la fecha seleccionada.");
-                setLoadingCierre(false);
-                return;
-            }
-
-            // 2. Agrupar por Método de Pago
-            const resumenPorMetodo: Record<string, { count: number, totalUsd: number, totalBs: number }> = {};
-            let granTotalUsd = 0;
-            let granTotalBs = 0;
-
-            pagosDelDia.forEach(p => {
-                const metodo = p.metodoPago;
-                if (!resumenPorMetodo[metodo]) {
-                    resumenPorMetodo[metodo] = { count: 0, totalUsd: 0, totalBs: 0 };
-                }
-                resumenPorMetodo[metodo].count += 1;
-                resumenPorMetodo[metodo].totalUsd += (p.monto || 0);
-                resumenPorMetodo[metodo].totalBs += (p.montoBolivares || 0);
-
-                granTotalUsd += (p.monto || 0);
-                granTotalBs += (p.montoBolivares || 0);
-            });
-
-            // 3. Generar PDF
-            const doc = new jsPDF();
-            const logo = await loadImage(LOGO_URL);
-            const pageWidth = doc.internal.pageSize.width;
-
-            // Encabezado
-            if (logo) doc.addImage(logo, 'PNG', 15, 10, 25, 25);
-            doc.setFontSize(16);
-            doc.setFont("helvetica", "bold");
-            doc.text("REPORTE DE CIERRE DE CAJA DIARIO", pageWidth / 2, 20, { align: 'center' });
-            
-            doc.setFontSize(10);
-            doc.setFont("helvetica", "normal");
-            doc.text(`Fecha de Cierre: ${fechaCierre}`, pageWidth / 2, 26, { align: 'center' });
-            doc.text(`Generado: ${new Date().toLocaleTimeString()}`, pageWidth / 2, 31, { align: 'center' });
-
-            // SECCIÓN 1: RESUMEN GENERAL (TOTALES)
-            doc.setFontSize(12);
-            doc.setFont("helvetica", "bold");
-            doc.text("1. RESUMEN POR MÉTODO DE PAGO", 15, 45);
-
-            const resumenData = Object.entries(resumenPorMetodo).map(([metodo, data]) => [
-                metodo,
-                data.count,
-                `$${data.totalUsd.toFixed(2)}`,
-                `Bs. ${data.totalBs.toFixed(2)}`
-            ]);
-
-            // Agregar fila de totales al resumen
-            resumenData.push(['TOTAL GENERAL', pagosDelDia.length, `$${granTotalUsd.toFixed(2)}`, `Bs. ${granTotalBs.toFixed(2)}`]);
-
-            autoTable(doc, {
-                startY: 50,
-                head: [['Método de Pago', 'Cant. Transacciones', 'Total USD', 'Total Bs']],
-                body: resumenData,
-                theme: 'grid',
-                headStyles: { fillColor: [40, 40, 40] },
-                columnStyles: { 0: { cellWidth: 60 }, 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-                didParseCell: (data) => {
-                    // Negrita para la fila de totales
-                    if (data.row.index === resumenData.length - 1) {
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = [220, 220, 220];
-                    }
-                }
-            });
-
-            // SECCIÓN 2: DETALLE DE MOVIMIENTOS
-            const finalY = (doc as any).lastAutoTable.finalY + 15;
-            doc.text("2. DETALLE DE OPERACIONES", 15, finalY);
-
-            const detalleData = pagosDelDia.map(p => {
-                // Extraer hora del timestamp si existe, sino usar N/A
-                let hora = "N/A";
-                if (p.timestamp) {
-                    try {
-                        hora = new Date(p.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    } catch(e) {}
-                }
-
-                return [
-                    hora,
-                    p.referencia || "S/R",
-                    p.nombreRepresentante.substring(0, 25), // Truncar nombre largo
-                    p.mes || "Abono",
-                    p.metodoPago,
-                    `$${(p.monto || 0).toFixed(2)}`,
-                    p.montoBolivares ? `Bs. ${(p.montoBolivares).toFixed(2)}` : '-'
-                ];
-            });
-
-            autoTable(doc, {
-                startY: finalY + 5,
-                head: [['Hora', 'Ref', 'Representante', 'Concepto', 'Método', 'Monto $', 'Monto Bs']],
-                body: detalleData,
-                theme: 'striped',
-                styles: { fontSize: 8 },
-                headStyles: { fillColor: [63, 81, 181] },
-                columnStyles: { 5: { halign: 'right', fontStyle: 'bold' }, 6: { halign: 'right' } }
-            });
-
-            // SECCIÓN 3: FIRMAS
-            const firmaY = (doc as any).lastAutoTable.finalY + 40;
-            
-            // Verificar si hay espacio en la página, si no, agregar nueva
-            if (firmaY > 250) {
-                doc.addPage();
-            }
-
-            const pageHeight = doc.internal.pageSize.height;
-            const yPos = firmaY > pageHeight - 30 ? pageHeight - 30 : firmaY;
-
-            doc.setLineWidth(0.5);
-            doc.line(30, yPos, 90, yPos);
-            doc.setFontSize(10);
-            doc.text("Cajero(a) Responsable", 60, yPos + 5, { align: 'center' });
-
-            doc.line(120, yPos, 180, yPos);
-            doc.text("Supervisor / Administración", 150, yPos + 5, { align: 'center' });
-
-            doc.save(`Cierre_Caja_${fechaCierre}.pdf`);
-
-        } catch (e) {
-            console.error(e);
-            alert("Error generando el reporte de cierre.");
-        } finally {
-            setLoadingCierre(false);
-        }
-    };
-
-    // Calculo dinámico para UI
     const montoBsEstimado = monto ? (parseFloat(monto) * tasaCambio).toFixed(2) : '0.00';
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
             
-            {/* HEADER CON TITULO Y BOTON DE CIERRE DE CAJA */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100 gap-4">
+            {/* --- HEADER: TÍTULO Y CIERRE DE CAJA --- */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100 gap-4">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                      <CreditCard className="text-indigo-600" /> Registro de Pagos (Caja)
+                        <CreditCard className="text-indigo-600" /> Registro de Pagos (Caja)
                     </h2>
                     <p className="text-sm text-gray-500">Gestión de Cobranza y Cierre Diario</p>
                 </div>
-                
-                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-200">
+
+                {/* Controles Cierre de Caja */}
+                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-200 shadow-sm">
                     <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase">Fecha Cierre</label>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide px-1">Fecha de Cierre</label>
                         <input 
                             type="date" 
-                            className="text-sm border-none bg-transparent outline-none text-gray-700 font-medium cursor-pointer"
+                            className="bg-transparent border-none text-sm font-bold text-slate-700 focus:ring-0 cursor-pointer p-1"
                             value={fechaCierre}
                             onChange={(e) => setFechaCierre(e.target.value)}
                         />
                     </div>
-                    <div className="h-8 w-px bg-gray-300 mx-1"></div>
+                    <div className="h-8 w-px bg-gray-300 mx-2"></div>
                     <button 
                         onClick={generarCierreDiario}
                         disabled={loadingCierre}
-                        className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 flex items-center gap-2 transition-colors shadow-sm"
+                        className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50"
                     >
-                        {loadingCierre ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                        {loadingCierre ? 'Generando...' : 'Cierre Diario (PDF)'}
+                        {loadingCierre ? <Loader2 size={16} className="animate-spin" /> : <BarChart3 size={16} />}
+                        {loadingCierre ? 'Generando...' : 'Generar Cierre PDF'}
                     </button>
                 </div>
             </div>
@@ -670,7 +652,7 @@ export const Pagos: React.FC = () => {
                              </div>
                          </div>
 
-                         {/* Sección Pronto Pago (Nuevo) */}
+                         {/* Sección Pronto Pago */}
                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-blue-50 border border-blue-100 rounded-lg p-3 mb-6">
                              <div className="flex items-center gap-3">
                                  <div className={`p-2 rounded-full ${aplicarProntoPago ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}`}>
