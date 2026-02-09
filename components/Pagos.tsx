@@ -376,6 +376,7 @@ export const Pagos: React.FC = () => {
             
             if (estadoInicial === EstadoPago.VERIFICADO) {
                  if(window.confirm(`¿Desea descargar el recibo de ${esAbono ? 'Abono' : 'Pago'} ahora?`)) {
+                     // Importante: Pasamos saldoReal porque es el saldo ANTES de restar este pago recién guardado
                      generarRecibo(nuevoPago, saldoReal);
                  }
             }
@@ -399,25 +400,38 @@ export const Pagos: React.FC = () => {
         const logo = await loadImage(LOGO_URL);
         const pageWidth = doc.internal.pageSize.width;
         
-        const saldoRestante = Math.max(0, saldoAnterior - (pago.monto || 0));
-        const esAbono = saldoRestante > 1; 
-        const tituloRecibo = esAbono ? "RECIBO DE ABONO" : "RECIBO DE PAGO (CANCELACIÓN TOTAL)";
+        // --- CÁLCULOS CLAROS ---
+        const montoPagado = pago.monto || 0;
+        // Saldo restante es lo que debía antes menos lo que pagó ahora
+        const saldoRestante = Math.max(0, saldoAnterior - montoPagado);
+        
+        // Determinar tipo de recibo
+        // Usamos 0.5 de holgura por temas de redondeo en flotantes
+        const esDeudaPendiente = saldoRestante > 0.5;
+        const tituloRecibo = esDeudaPendiente ? "COMPROBANTE DE ABONO" : "RECIBO DE PAGO (SOLVENTE)";
+        const colorHeader = esDeudaPendiente ? [230, 81, 0] : [63, 81, 181]; // Naranja para Abono, Azul para Pago
 
-        doc.setFillColor(63, 81, 181); 
+        // --- HEADER ---
+        doc.setFillColor(colorHeader[0], colorHeader[1], colorHeader[2]); 
         doc.rect(0, 0, pageWidth, 40, 'F');
         
         if (logo) doc.addImage(logo, 'PNG', 10, 5, 30, 30);
         
         doc.setTextColor(255, 255, 255);
-        doc.setFontSize(20);
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
         doc.setFontSize(10);
-        doc.text("Comprobante de Ingreso - Caja Administrativa", pageWidth / 2, 30, { align: 'center' });
+        doc.setFont("helvetica", "normal");
+        doc.text("Sistema Administrativo Escolar", pageWidth / 2, 28, { align: 'center' });
+        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, pageWidth - 15, 35, { align: 'right' });
 
+        // --- INFO GENERAL ---
         doc.setTextColor(0, 0, 0);
-        doc.text(`Fecha: ${pago.fechaPago}`, 14, 50);
+        doc.text(`Fecha Pago: ${pago.fechaPago}`, 14, 50);
         doc.text(`Control N°: ${pago.id.substring(0, 8).toUpperCase()}`, 14, 56);
         
+        // --- DATOS REPRESENTANTE ---
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
         doc.text("DATOS DEL REPRESENTANTE", 14, 66);
@@ -425,8 +439,9 @@ export const Pagos: React.FC = () => {
         doc.setFontSize(10);
         doc.text(`Nombre: ${representante.nombres} ${representante.apellidos}`, 14, 72);
         doc.text(`Cédula: ${representante.cedula}`, 14, 78);
-        doc.text(`Matrícula: ${representante.matricula}`, 14, 84);
+        doc.text(`Matrícula Familiar: ${representante.matricula}`, 14, 84);
 
+        // --- DETALLES PAGO ---
         autoTable(doc, {
             startY: 90,
             head: [['Concepto / Mes', 'Método de Pago', 'Referencia', 'Monto ($)', 'Monto (Bs)']],
@@ -434,53 +449,80 @@ export const Pagos: React.FC = () => {
                 `${pago.mes} ${pago.anio}`,
                 pago.metodoPago,
                 pago.referencia,
-                `$${(pago.monto || 0).toFixed(2)}`,
+                `$${montoPagado.toFixed(2)}`,
                 pago.montoBolivares ? `Bs. ${pago.montoBolivares.toFixed(2)}` : '-'
             ]],
             theme: 'grid',
-            headStyles: { fillColor: [40, 40, 40] }
+            headStyles: { fillColor: [50, 50, 50] }
         });
 
+        // --- CAJA DE SALDOS Y ESTADO DE CUENTA ---
         const finalY = (doc as any).lastAutoTable.finalY + 10;
         
+        // Fondo gris suave para la caja
         doc.setFillColor(245, 247, 250);
         doc.setDrawColor(200, 200, 200);
-        doc.rect(14, finalY, pageWidth - 28, 45, 'FD');
+        doc.rect(14, finalY, pageWidth - 28, 50, 'FD');
 
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
-        doc.text("ESTADO DE CUENTA (Operación Actual)", 20, finalY + 10);
+        doc.setTextColor(60, 60, 60);
+        doc.text("RESUMEN DE OPERACIÓN Y SALDO", 20, finalY + 10);
         
         doc.setFontSize(10);
         doc.setFont("helvetica", "normal");
         
-        doc.text("Deuda Anterior Estimada:", 20, finalY + 20);
-        doc.text(`$${saldoAnterior.toFixed(2)}`, 180, finalY + 20, { align: 'right' });
+        // Línea 1: Deuda Anterior
+        doc.text("Deuda Total Antes del Pago:", 20, finalY + 22);
+        doc.text(`$${saldoAnterior.toFixed(2)}`, 180, finalY + 22, { align: 'right' });
         
-        doc.text("(-) Monto Abonado Hoy:", 20, finalY + 28);
-        doc.setTextColor(0, 128, 0); // Verde
+        // Línea 2: Pago Actual (Resta)
+        doc.text("(-) Monto Abonado Hoy:", 20, finalY + 30);
+        doc.setTextColor(0, 128, 0); // Verde para el pago
         doc.setFont("helvetica", "bold");
-        doc.text(`$${(pago.monto || 0).toFixed(2)}`, 180, finalY + 28, { align: 'right' });
+        doc.text(`$${montoPagado.toFixed(2)}`, 180, finalY + 30, { align: 'right' });
         
+        // Línea Divisoria
         doc.setDrawColor(150);
-        doc.line(20, finalY + 32, 185, finalY + 32);
+        doc.setLineWidth(0.5);
+        doc.line(20, finalY + 34, 185, finalY + 34);
         
+        // Línea 3: Saldo Restante (Resultado)
         doc.setTextColor(0);
-        const labelSaldo = saldoRestante > 1 ? "SALDO PENDIENTE (DEUDA):" : "SALDO RESTANTE (SOLVENTE):";
-        doc.text(labelSaldo, 20, finalY + 40);
+        const labelSaldo = esDeudaPendiente ? "(=) SALDO DEUDOR RESTANTE:" : "(=) SALDO PENDIENTE:";
+        doc.text(labelSaldo, 20, finalY + 42);
         
-        if (saldoRestante > 1) doc.setTextColor(200, 0, 0); // Rojo
-        else doc.setTextColor(0, 0, 150); // Azul
-        
-        const displaySaldo = saldoRestante < 1 ? 0 : saldoRestante;
-        doc.text(`$${displaySaldo.toFixed(2)}`, 180, finalY + 40, { align: 'right' });
+        if (esDeudaPendiente) {
+            doc.setTextColor(220, 0, 0); // Rojo si debe
+            doc.text(`$${saldoRestante.toFixed(2)}`, 180, finalY + 42, { align: 'right' });
+            
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text("* El representante mantiene una deuda pendiente. Favor regularizar.", 20, finalY + 48);
+        } else {
+            doc.setTextColor(0, 0, 150); // Azul si está solvente
+            doc.text(`$0.00 (SOLVENTE)`, 180, finalY + 42, { align: 'right' });
+        }
 
+        // --- PIE DE PÁGINA ---
         doc.setTextColor(150);
         doc.setFontSize(8);
         doc.setFont("helvetica", "normal");
-        doc.text("Recibo generado electrónicamente por el sistema AdminPro.", 105, 280, { align: 'center' });
+        
+        // Espacio para firmas
+        const firmaY = finalY + 70;
+        doc.setDrawColor(100);
+        
+        doc.line(30, firmaY, 90, firmaY);
+        doc.text("Cajero / Administración", 60, firmaY + 5, { align: 'center' });
+        
+        doc.line(120, firmaY, 180, firmaY);
+        doc.text("Representante (Conforme)", 150, firmaY + 5, { align: 'center' });
 
-        doc.save(`Recibo_${pago.cedulaRepresentante}_${pago.id.substring(0,8)}.pdf`);
+        doc.text("Este recibo fue generado electrónicamente por el sistema AdminPro.", 105, 280, { align: 'center' });
+
+        const nombreArchivo = esDeudaPendiente ? `Abono_${pago.cedulaRepresentante}.pdf` : `PagoTotal_${pago.cedulaRepresentante}.pdf`;
+        doc.save(nombreArchivo);
     };
 
     const montoBsEstimado = monto ? (parseFloat(monto) * tasaCambio).toFixed(2) : '0.00';
