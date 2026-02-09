@@ -478,7 +478,6 @@ export const Pagos: React.FC = () => {
             // Verificar si hay espacio en la página, si no, agregar nueva
             if (firmaY > 250) {
                 doc.addPage();
-                // firmaY = 40; // Resetear Y si es nueva pagina (pero en const no se puede reasignar facil, asi que manejo logica simple)
             }
 
             const pageHeight = doc.internal.pageSize.height;
@@ -712,7 +711,7 @@ export const Pagos: React.FC = () => {
                                         onClick={setAbono}
                                         className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
                                      >
-                                         <Edit size={16} /> Abono / Otro Monto
+                                         <Edit size={16} /> Abono
                                      </button>
                                  </div>
                              )}
@@ -734,7 +733,18 @@ export const Pagos: React.FC = () => {
                                             onChange={(e) => setMonto(e.target.value)}
                                          />
                                      </div>
-                                     <p className="text-xs text-gray-500 mt-2 ml-1">Ingrese el monto reflejado en la transacción.</p>
+                                     
+                                     {/* Saldo Restante en Tiempo Real */}
+                                     {representante && saldoReal > 0 && (
+                                         <div className="flex justify-between items-center mt-2 text-xs px-1">
+                                             <span className="text-gray-500">Saldo Actual: ${saldoReal.toFixed(2)}</span>
+                                             <span className={`font-bold ${
+                                                 (saldoReal - (parseFloat(monto)||0)) > 0 ? 'text-orange-600' : 'text-green-600'
+                                             }`}>
+                                                 Restante: ${Math.max(0, saldoReal - (parseFloat(monto)||0)).toFixed(2)}
+                                             </span>
+                                         </div>
+                                     )}
                                  </div>
 
                                  {/* Icono Conversión */}
