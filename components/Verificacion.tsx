@@ -4,6 +4,7 @@ import { db } from '../services/db';
 import { RegistroPago, EstadoPago, Representante } from '../types';
 import { Check, X, AlertTriangle, RefreshCw, Search, Monitor, Loader2, Printer } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { LOGO_URL } from '../constants';
 
 // Helper
@@ -76,7 +77,9 @@ export const Verificacion: React.FC = () => {
         const pageWidth = doc.internal.pageSize.width;
         
         // --- CÁLCULOS VISUALES ---
-        const saldoAnterior = saldoRestante + pago.monto;
+        // saldoRestante es el saldo calculado DESPUES de aprobar este pago.
+        // Por tanto, el saldo anterior era: saldoRestante + pago.monto
+        const saldoAnterior = saldoRestante + (pago.monto || 0);
 
         // --- HEADER ---
         doc.setFillColor(63, 81, 181); // Indigo
@@ -90,7 +93,8 @@ export const Verificacion: React.FC = () => {
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
         
-        const tituloRecibo = saldoRestante <= 0 ? "RECIBO DE PAGO (SOLVENTE)" : "COMPROBANTE DE ABONO";
+        // Si hay saldo restante > 0, es un ABONO. Si no, es PAGO TOTAL.
+        const tituloRecibo = saldoRestante > 0 ? "RECIBO DE ABONO" : "RECIBO DE PAGO (SOLVENTE)";
         doc.text(tituloRecibo, pageWidth / 2, 20, { align: 'center' });
         doc.setFontSize(12);
         doc.text("AdminPro - Verificación de Pagos", pageWidth / 2, 30, { align: 'center' });
@@ -115,26 +119,23 @@ export const Verificacion: React.FC = () => {
         doc.text(`Cédula: ${rep.cedula}`, 14, 92);
         doc.text(`Matrícula Familiar: ${rep.matricula}`, 14, 98);
 
-        // --- DETALLES TRANSACCIÓN ---
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("DETALLES DE LA TRANSACCIÓN (VERIFICADA)", 14, 113);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-
-        const startY = 123;
-        const col2 = pageWidth / 2;
-
-        doc.text(`Concepto: ${pago.mes} ${pago.anio}`, 14, startY);
-        doc.text(`Método: ${pago.metodoPago}`, col2, startY);
-        doc.text(`Ref: ${pago.referencia}`, col2, startY + 8);
-        
-        if(pago.montoBolivares) {
-            doc.text(`Monto Bs: ${pago.montoBolivares.toFixed(2)}`, col2, startY + 16);
-        }
+        // --- DETALLES TRANSACCIÓN (Tabla) ---
+        // Usar autoTable para mejor presentación de Bs y $
+        autoTable(doc, {
+            startY: 110,
+            head: [['Concepto', 'Método', 'Referencia', 'Monto USD', 'Monto Bs']],
+            body: [[
+                `${pago.mes} ${pago.anio}`,
+                pago.metodoPago,
+                pago.referencia,
+                `$${(pago.monto || 0).toFixed(2)}`,
+                pago.montoBolivares ? `Bs. ${pago.montoBolivares.toFixed(2)}` : '-'
+            ]],
+            headStyles: { fillColor: [50, 50, 50] }
+        });
 
         // --- CAJA FINANCIERA (SALDOS) ---
-        const boxY = 155;
+        const boxY = (doc as any).lastAutoTable.finalY + 15;
         doc.setDrawColor(0, 0, 0);
         doc.setFillColor(245, 247, 250);
         doc.rect(14, boxY, pageWidth - 28, 55, 'FD');
@@ -145,12 +146,12 @@ export const Verificacion: React.FC = () => {
         doc.setFont("helvetica", "normal");
         
         // Saldo Anterior
-        const textoSaldoAnt = saldoAnterior > 0 ? "Saldo Anterior (Estimado):" : "Saldo Anterior (Crédito):";
+        const textoSaldoAnt = "Saldo Anterior Estimado:";
         doc.text(textoSaldoAnt, 20, boxY + 20);
         doc.text(`$${Math.abs(saldoAnterior).toFixed(2)}`, pageWidth - 30, boxY + 20, { align: 'right' });
 
-        // Monto Pagado
-        doc.text("Monto Aprobado (-):", 20, boxY + 28);
+        // Monto Pagado (Abono)
+        doc.text("(-) Monto Abonado:", 20, boxY + 28);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(0, 100, 0); // Verde oscuro
         doc.text(`$${(pago.monto || 0).toFixed(2)}`, pageWidth - 30, boxY + 28, { align: 'right' });
@@ -161,8 +162,8 @@ export const Verificacion: React.FC = () => {
 
         // Saldo Final
         doc.setFont("helvetica", "bold");
-        let labelFinal = "SALDO RESTANTE (DEUDOR):";
-        if (saldoRestante <= 0) labelFinal = "ESTADO: SOLVENTE / A FAVOR:";
+        let labelFinal = "SALDO PENDIENTE (DEUDA):";
+        if (saldoRestante <= 0) labelFinal = "SALDO RESTANTE (SOLVENTE):";
         doc.text(labelFinal, 20, boxY + 45);
         
         if (saldoRestante > 0) doc.setTextColor(200, 0, 0); // Rojo si debe
@@ -171,11 +172,11 @@ export const Verificacion: React.FC = () => {
         doc.text(`$${Math.abs(saldoRestante).toFixed(2)}`, pageWidth - 30, boxY + 45, { align: 'right' });
 
         // --- PIE ---
-        doc.setTextColor(0);
+        doc.setTextColor(150);
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.text(`ESTADO DEL PAGO: APROBADO`, 14, 230);
-        doc.text(`Verificado el: ${new Date().toLocaleString()}`, 14, 236);
+        doc.setFontSize(9);
+        doc.text(`Recibo generado automáticamente tras verificación.`, 105, 270, { align: 'center' });
+        doc.text(`Fecha impresión: ${new Date().toLocaleString()}`, 105, 275, { align: 'center' });
 
         doc.save(`Recibo_Verificado_${pago.cedulaRepresentante}_${pago.id.substring(0,4)}.pdf`);
     } catch (e) {
@@ -214,9 +215,14 @@ export const Verificacion: React.FC = () => {
         // 2. Si se aprueba, calcular saldo y generar recibo
         if (accion === 'APROBAR' || accion === 'RECUPERAR') {
              const rep = await db.getRepresentanteByCedula(pago.cedulaRepresentante);
-             const saldoActual = await db.calcularSaldoPendiente(pago.cedulaRepresentante);
+             
+             // NOTA: calcularSaldoPendiente devuelve el saldo TOTAL actual de la BD.
+             // Como acabamos de marcar el pago como VERIFICADO en el paso 1,
+             // el saldo que retorna esta función YA incluye el descuento de este pago.
+             const saldoRestanteReal = await db.calcularSaldoPendiente(pago.cedulaRepresentante);
+             
              if (rep) {
-                 await generarReciboAprobacion(pago, rep, saldoActual);
+                 await generarReciboAprobacion(pago, rep, saldoRestanteReal);
              }
         }
 

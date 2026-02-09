@@ -166,7 +166,8 @@ function doGet(e) {
             solicitanteOProveedor: String(r[7]),
             motivo: String(r[8]),
             usuarioRegistra: String(r[9]),
-            costoTotal: Number(r[10] || 0) // NUEVO: Costo Total
+            costoTotal: Number(r[10] || 0),
+            precioUnitario: Number(r[11] || 0)
          }));
       }
 
@@ -447,7 +448,7 @@ function doPost(e) {
     }
 
     if (action === 'saveMovimiento') {
-      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal']);
+      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal', 'PrecioUnitario']);
       sheet.appendRow([
         data.id, 
         data.fecha, 
@@ -459,9 +460,33 @@ function doPost(e) {
         data.solicitanteOProveedor, 
         data.motivo, 
         data.usuarioRegistra,
-        data.costoTotal || 0 // NUEVO: Guardar costo
+        data.costoTotal || 0,
+        data.precioUnitario || 0
       ]);
       return success('Movimiento registrado');
+    }
+
+    if (action === 'saveMovimientoBatch') {
+      let sheet = getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal', 'PrecioUnitario']);
+      if (!Array.isArray(data)) return errorResponse("Data debe ser un array");
+      
+      data.forEach(m => {
+        sheet.appendRow([
+          m.id, 
+          m.fecha, 
+          m.articuloId, 
+          m.nombreArticulo, 
+          m.categoria, 
+          m.tipo, 
+          m.cantidad, 
+          m.solicitanteOProveedor, 
+          m.motivo, 
+          m.usuarioRegistra,
+          m.costoTotal || 0,
+          m.precioUnitario || 0
+        ]);
+      });
+      return success('Movimientos registrados en lote');
     }
     
     // --- EMPLEADOS ---
@@ -586,7 +611,7 @@ function setup() {
   ]);
   getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
   getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
-  getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal']);
+  getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal', 'PrecioUnitario']);
   getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);
   getOrCreateSheet(ss, 'PayrollHistory', [
     'ID', 'EmpleadoID', 'Nombre', 'Cedula', 'Cargo', 'Periodo', 'FechaPago', 

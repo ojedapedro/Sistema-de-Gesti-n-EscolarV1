@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown } from 'lucide-react';
@@ -87,7 +86,7 @@ export const Dashboard: React.FC = () => {
   });
 
   // Cálculo en Bolívares de Morosidad
-  const totalMorosidadBs = totalMorosidad * (tasa || 0);
+  const totalMorosidadBs = Number(totalMorosidad) * Number(tasa || 0);
 
 
   // --- Cálculos Mes Actual ---
