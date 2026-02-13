@@ -189,21 +189,49 @@ export const Verificacion: React.FC = () => {
     let nuevoEstado: EstadoPago;
     let mensaje = "";
 
-    switch (accion) {
-      case 'APROBAR':
-        nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `⚠️ CONFIRMACIÓN DE APROBACIÓN ⚠️\n\n¿Está seguro de que desea APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\n✅ Esta acción validará el ingreso y generará el recibo automáticamente.`;
-        break;
-      case 'RECHAZAR':
+    // Lógica de Validación Inteligente
+    if (accion === 'APROBAR' || accion === 'RECUPERAR') {
+        try {
+            document.body.style.cursor = 'wait';
+            // Consultar deuda actual ANTES de aprobar
+            const deudaActual = await db.calcularSaldoPendiente(pago.cedulaRepresentante);
+            document.body.style.cursor = 'default';
+
+            nuevoEstado = EstadoPago.VERIFICADO;
+            
+            const excedente = (pago.monto || 0) - deudaActual;
+            const esPagoExcesivo = excedente > 1; // Tolerancia $1
+            const esCuentaSolvente = deudaActual <= 0;
+
+            mensaje = `⚠️ VERIFICACIÓN DE PAGO ⚠️\n\n`;
+            mensaje += `👤 Representante: ${pago.nombreRepresentante}\n`;
+            mensaje += `💳 Referencia: ${pago.referencia}\n`;
+            mensaje += `💰 Monto del Pago: $${(pago.monto || 0).toFixed(2)}\n`;
+            mensaje += `📉 Deuda Registrada: $${deudaActual.toFixed(2)}\n\n`;
+
+            if (esPagoExcesivo) {
+                mensaje += `🚨 ALERTA DE DISCREPANCIA 🚨\n`;
+                mensaje += `El pago excede la deuda por $${excedente.toFixed(2)}.\n`;
+                mensaje += `Esto generará un SALDO A FAVOR (Crédito) para el representante.\n\n`;
+            } else if (esCuentaSolvente) {
+                mensaje += `ℹ️ NOTA: El representante ya está SOLVENTE.\n`;
+                mensaje += `Este pago se registrará como un abono a favor.\n\n`;
+            } else {
+                mensaje += `✅ El monto es coherente con la deuda pendiente.\n\n`;
+            }
+            
+            mensaje += `¿Desea APROBAR este pago y generar el recibo?`;
+
+        } catch (e) {
+            document.body.style.cursor = 'default';
+            console.error("Error validando deuda:", e);
+            // Fallback si falla la validación
+            nuevoEstado = EstadoPago.VERIFICADO;
+            mensaje = `⚠️ CONFIRMACIÓN DE APROBACIÓN ⚠️\n\n¿Está seguro de que desea APROBAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\n(No se pudo verificar la deuda actual en tiempo real)`;
+        }
+    } else {
         nuevoEstado = EstadoPago.RECHAZADO;
         mensaje = `⛔ CONFIRMACIÓN DE RECHAZO ⛔\n\n¿Está seguro de que desea RECHAZAR este pago?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n💰 Monto: $${(pago.monto || 0).toFixed(2)}\n\n❌ El pago será marcado como inválido.`;
-        break;
-      case 'RECUPERAR': 
-        nuevoEstado = EstadoPago.VERIFICADO;
-        mensaje = `🔄 CONFIRMACIÓN DE RECUPERACIÓN 🔄\n\n¿Desea RECUPERAR y APROBAR este pago previamente rechazado?\n\n👤 Representante: ${pago.nombreRepresentante}\n💳 Referencia: ${pago.referencia}\n\n✅ Se marcará como verificado y se generará el recibo.`;
-        break;
-      default:
-        return;
     }
 
     if (window.confirm(mensaje)) {
@@ -212,7 +240,7 @@ export const Verificacion: React.FC = () => {
         // 1. Actualizar estado en BD
         await db.updateEstadoPago(pago.id, pago.referencia, pago.cedulaRepresentante, nuevoEstado);
         
-        // 2. Si se aprueba, calcular saldo y generar recibo
+        // 2. Si se aprueba, recalcular saldo y generar recibo
         if (accion === 'APROBAR' || accion === 'RECUPERAR') {
              const rep = await db.getRepresentanteByCedula(pago.cedulaRepresentante);
              
