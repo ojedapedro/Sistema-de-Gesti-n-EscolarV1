@@ -196,6 +196,8 @@ export const Reportes: React.FC = () => {
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && (!p.studentId || p.studentId === 'VARIOS' || p.studentId === 'TODOS'))
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
+      const totalBolsaInicial = bolsaGeneral; // Para registro estadístico del total pagado
+
       // 3. Distribuir Bolsa General a las deudas pendientes de los alumnos
       detallesAlumnos.forEach(detalle => {
          if (bolsaGeneral > 0) {
@@ -209,19 +211,21 @@ export const Reportes: React.FC = () => {
          }
       });
 
-      // 4. Si sobra bolsa general (saldo a favor), asignarlo visualmente al primer alumno o mantener como crédito global
-      // Para efectos de este reporte, se suma al primer alumno para mostrar que la familia ha pagado de más
+      // 4. Si sobra bolsa general (saldo a favor), asignarlo visualmente al primer alumno
       if (bolsaGeneral > 0 && detallesAlumnos.length > 0) {
           detallesAlumnos[0].pagado += bolsaGeneral;
-          // El pendiente ya es 0, así que técnicamente tendría saldo a favor, pero pendiente se queda en 0.
       }
 
-      // Cálculo Global del Representante
-      const totalPagadoRep = _pagos
-        .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
-        .reduce((acc, p) => acc + (p.monto || 0), 0);
-
-      const saldoPendiente = Math.max(0, deudaEsperadaTotal - totalPagadoRep);
+      // 5. Cálculo Global del Representante (CORREGIDO)
+      // El total pagado es la suma real de dinero entrante
+      const totalPagadoRep = detallesAlumnos.reduce((acc, d) => acc + d.pagado, 0); 
+      
+      // IMPORTANTE: El saldo pendiente del representante debe ser la suma de los pendientes de los hijos.
+      // Si un hijo tiene saldo a favor (negativo implícito por sobrepago) no debe restar la deuda del otro aquí,
+      // porque 'pendiente' en detalleAlumno ya está clampado a 0 con Math.max(0,...).
+      // Sin embargo, si hubo sobrepago específico a un alumno, detalle.pendiente es 0.
+      
+      const saldoPendienteReal = detallesAlumnos.reduce((acc, d) => acc + d.pendiente, 0);
 
       return {
         cedula: rep.cedula,
@@ -230,8 +234,8 @@ export const Reportes: React.FC = () => {
         totalAlumnos: rep.alumnos.length,
         deudaEsperada: deudaEsperadaTotal,
         totalPagado: totalPagadoRep,
-        saldoPendiente,
-        esMoroso: saldoPendiente > 0.5, // Tolerancia de centavos
+        saldoPendiente: saldoPendienteReal, // Ahora cuadra con la suma de la tabla hija
+        esMoroso: saldoPendienteReal > 0.5,
         detallesAlumnos
       };
     });
