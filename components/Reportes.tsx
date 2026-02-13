@@ -168,6 +168,7 @@ export const Reportes: React.FC = () => {
     const resultados: DeudaCalculada[] = reps.map(rep => {
       let deudaEsperadaTotal = 0;
       
+      // 1. Calcular Costos y Pagos Específicos por Alumno
       const detallesAlumnos: DetalleAlumnoDeuda[] = rep.alumnos.map(alu => {
         const configNivel = niveles.find(n => n.nivel === alu.nivel);
         const precioMensual = configNivel ? (configNivel.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
@@ -175,6 +176,7 @@ export const Reportes: React.FC = () => {
         const costoTotalAlumno = precioMensual * mesesTranscurridos;
         deudaEsperadaTotal += costoTotalAlumno;
 
+        // Sumar solo pagos que tienen el ID de este alumno
         const pagosEspecificos = _pagos
           .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && p.studentId === alu.id)
           .reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -189,10 +191,12 @@ export const Reportes: React.FC = () => {
         };
       });
 
+      // 2. Identificar "Bolsa General" (Pagos a TODOS o sin ID específico)
       let bolsaGeneral = _pagos
-        .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && (!p.studentId || p.studentId === 'VARIOS'))
+        .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO && (!p.studentId || p.studentId === 'VARIOS' || p.studentId === 'TODOS'))
         .reduce((acc, p) => acc + (p.monto || 0), 0);
 
+      // 3. Distribuir Bolsa General a las deudas pendientes de los alumnos
       detallesAlumnos.forEach(detalle => {
          if (bolsaGeneral > 0) {
              const deudaActual = detalle.pendiente;
@@ -205,10 +209,14 @@ export const Reportes: React.FC = () => {
          }
       });
 
+      // 4. Si sobra bolsa general (saldo a favor), asignarlo visualmente al primer alumno o mantener como crédito global
+      // Para efectos de este reporte, se suma al primer alumno para mostrar que la familia ha pagado de más
       if (bolsaGeneral > 0 && detallesAlumnos.length > 0) {
           detallesAlumnos[0].pagado += bolsaGeneral;
+          // El pendiente ya es 0, así que técnicamente tendría saldo a favor, pero pendiente se queda en 0.
       }
 
+      // Cálculo Global del Representante
       const totalPagadoRep = _pagos
         .filter(p => p.cedulaRepresentante === rep.cedula && p.estado === EstadoPago.VERIFICADO)
         .reduce((acc, p) => acc + (p.monto || 0), 0);
@@ -223,7 +231,7 @@ export const Reportes: React.FC = () => {
         deudaEsperada: deudaEsperadaTotal,
         totalPagado: totalPagadoRep,
         saldoPendiente,
-        esMoroso: saldoPendiente > 0,
+        esMoroso: saldoPendiente > 0.5, // Tolerancia de centavos
         detallesAlumnos
       };
     });
@@ -944,44 +952,56 @@ export const Reportes: React.FC = () => {
                               {/* Fila Expandida para Detalle de Alumnos */}
                               {tipoReporte === 'SOLVENCIA' && expandedRow === item.cedula && (
                                 <tr className="bg-slate-50">
-                                  <td colSpan={7} className="px-8 py-4 border-b">
-                                    <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-inner">
-                                      <div className="px-4 py-2 bg-slate-100 border-b border-gray-200 text-xs font-bold text-slate-700 uppercase tracking-wider flex justify-between">
-                                        <span>Detalle Financiero por Estudiante</span>
-                                        <span>Matrícula: {item.matricula}</span>
+                                  <td colSpan={7} className="px-8 py-6 border-b shadow-inner">
+                                    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                      <div className="px-4 py-3 bg-slate-50 border-b border-gray-200 flex justify-between items-center">
+                                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Detalle Financiero por Estudiante</h4>
+                                        <span className="text-xs bg-slate-200 px-2 py-1 rounded text-slate-600 font-mono">Matrícula: {item.matricula}</span>
                                       </div>
-                                      <table className="w-full text-xs">
-                                        <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
+                                      
+                                      <table className="w-full text-xs text-left">
+                                        <thead className="bg-slate-100 text-slate-500 font-bold uppercase border-b border-slate-200">
                                           <tr>
-                                            <th className="px-4 py-3 text-left">Alumno</th>
-                                            <th className="px-4 py-3 text-left">Nivel (Sección)</th>
-                                            <th className="px-4 py-3 text-right">Costo Calculado</th>
-                                            <th className="px-4 py-3 text-right">Total Pagado</th>
-                                            <th className="px-4 py-3 text-right">Deuda Pendiente</th>
+                                            <th className="px-4 py-3">Alumno</th>
+                                            <th className="px-4 py-3">Nivel / Sección</th>
+                                            <th className="px-4 py-3 text-right">Costo Acumulado</th>
+                                            <th className="px-4 py-3 text-right">Abonado</th>
+                                            <th className="px-4 py-3 text-right">Saldo Pendiente</th>
                                             <th className="px-4 py-3 text-center">Estado</th>
                                           </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-gray-100">
+                                        <tbody className="divide-y divide-slate-100 bg-white">
                                           {item.detallesAlumnos.map((alu: DetalleAlumnoDeuda, i: number) => (
-                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                            <tr key={i} className="hover:bg-indigo-50/30 transition-colors">
                                               <td className="px-4 py-3 font-medium text-slate-700">{alu.nombre}</td>
-                                              <td className="px-4 py-3 text-gray-500">{alu.nivel} <span className="text-gray-400">({alu.seccion})</span></td>
-                                              <td className="px-4 py-3 text-right font-mono text-gray-500">${alu.costo.toFixed(2)}</td>
+                                              <td className="px-4 py-3 text-slate-500">{alu.nivel} <span className="text-slate-400">({alu.seccion})</span></td>
+                                              <td className="px-4 py-3 text-right font-mono text-slate-600">${alu.costo.toFixed(2)}</td>
                                               <td className="px-4 py-3 text-right font-mono text-green-600 font-medium">${alu.pagado.toFixed(2)}</td>
                                               <td className="px-4 py-3 text-right font-mono font-bold text-red-600">${alu.pendiente.toFixed(2)}</td>
                                               <td className="px-4 py-3 text-center">
-                                                  {alu.pendiente > 0 ? (
-                                                      <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">DEBE</span>
+                                                  {alu.pendiente > 0.5 ? (
+                                                      <span className="bg-red-50 text-red-600 px-2 py-1 rounded border border-red-100 text-[10px] font-bold">DEBE</span>
                                                   ) : (
-                                                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">AL DÍA</span>
+                                                      <span className="bg-green-50 text-green-600 px-2 py-1 rounded border border-green-100 text-[10px] font-bold">AL DÍA</span>
                                                   )}
                                               </td>
                                             </tr>
                                           ))}
                                           {item.detallesAlumnos.length === 0 && (
-                                            <tr><td colSpan={6} className="px-4 py-4 text-center text-gray-400 italic">Sin alumnos registrados</td></tr>
+                                            <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400 italic">No hay alumnos asociados a este representante.</td></tr>
                                           )}
                                         </tbody>
+                                        {item.detallesAlumnos.length > 0 && (
+                                            <tfoot className="bg-gray-50 border-t border-gray-200 font-bold text-slate-700">
+                                                <tr>
+                                                    <td colSpan={2} className="px-4 py-3 text-right uppercase text-[10px]">Totales Familia:</td>
+                                                    <td className="px-4 py-3 text-right">${item.deudaEsperada.toFixed(2)}</td>
+                                                    <td className="px-4 py-3 text-right text-green-700">${item.totalPagado.toFixed(2)}</td>
+                                                    <td className="px-4 py-3 text-right text-red-700">${item.saldoPendiente.toFixed(2)}</td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
+                                        )}
                                       </table>
                                     </div>
                                   </td>
