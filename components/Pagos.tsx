@@ -25,6 +25,17 @@ const loadImage = (url: string): Promise<string | null> => {
   });
 };
 
+interface DetalleSaldoAlumno {
+    id: string;
+    nombre: string;
+    nivel: string;
+    seccion: string;
+    costo: number;
+    pagado: number;
+    pendiente: number;
+    estado: 'SOLVENTE' | 'DEBE';
+}
+
 export const Pagos: React.FC = () => {
     // --- ESTADOS ---
     const [cedulaBusqueda, setCedulaBusqueda] = useState('');
@@ -59,6 +70,7 @@ export const Pagos: React.FC = () => {
     
     // Estado calculado (Saldo)
     const [saldoReal, setSaldoReal] = useState(0);
+    const [detallesAlumnos, setDetallesAlumnos] = useState<DetalleSaldoAlumno[]>([]);
 
     const MESES = [
         "Inscripción", "Septiembre", "Octubre", "Noviembre", "Diciembre", 
@@ -83,34 +95,103 @@ export const Pagos: React.FC = () => {
         loadConfig();
     }, []);
 
+    // Efecto para calcular saldos detallados cada vez que cambia el representante o su historial
     useEffect(() => {
-        if (representante) {
-            actualizarSaldo();
-            // Cargar historial específico
-            db.getPagos().then(all => {
-                const repPagos = all.filter(p => p.cedulaRepresentante === representante.cedula);
-                setHistorialPagos(repPagos.sort((a,b) => new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime()));
-            });
+        if (representante && nivelesConfig.length > 0) {
+            calcularEstadoCuenta();
         }
-    }, [representante]);
+    }, [historialPagos, representante, nivelesConfig]);
 
-    // --- LOGICA ---
-    const actualizarSaldo = async () => {
+    // --- LOGICA DE CÁLCULO ---
+    const getMesesEscolares = () => {
+        const now = new Date();
+        const currentMonth = now.getMonth(); 
+        let meses = 0;
+        if (currentMonth >= 8) { 
+           meses = currentMonth - 7; 
+        } else { 
+           meses = 4 + (currentMonth + 1);
+        }
+        return Math.max(1, meses);
+    };
+
+    const calcularEstadoCuenta = () => {
         if (!representante) return;
-        try {
-            const s = await db.calcularSaldoPendiente(representante.cedula);
-            setSaldoReal(s);
-        } catch (e) { console.error(e); }
+        
+        // Usar historialPagos local que ya contiene los pagos actualizados
+        // Filtrar solo verificados para el cálculo de deuda real
+        const pagosValidos = historialPagos.filter(p => p.estado === EstadoPago.VERIFICADO);
+        const meses = getMesesEscolares();
+        
+        // 1. Calcular costos y pagos individuales
+        const detalles = representante.alumnos.map(alu => {
+            const config = nivelesConfig.find(n => n.nivel === alu.nivel);
+            const precio = config ? config.precio : (MENSUALIDADES[alu.nivel] || 0);
+            const costoTotal = precio * meses;
+            
+            const pagadoIndividual = pagosValidos
+                .filter(p => p.studentId === alu.id)
+                .reduce((sum, p) => sum + (p.monto || 0), 0);
+                
+            return {
+                id: alu.id,
+                nombre: alu.nombres, 
+                nivel: alu.nivel,
+                seccion: alu.seccion,
+                costo: costoTotal,
+                pagado: pagadoIndividual,
+                pendiente: Math.max(0, costoTotal - pagadoIndividual),
+                estado: 'SOLVENTE' as 'SOLVENTE' | 'DEBE'
+            };
+        });
+
+        // 2. Identificar Bolsa General (pagos sin ID específico)
+        let bolsaGeneral = pagosValidos
+            .filter(p => !p.studentId || p.studentId === 'VARIOS' || p.studentId === 'TODOS')
+            .reduce((sum, p) => sum + (p.monto || 0), 0);
+
+        // 3. Distribuir Bolsa General a las deudas
+        detalles.forEach(d => {
+            if (bolsaGeneral > 0 && d.pendiente > 0) {
+                const cubrir = Math.min(d.pendiente, bolsaGeneral);
+                d.pagado += cubrir;
+                d.pendiente -= cubrir;
+                bolsaGeneral -= cubrir;
+            }
+        });
+        
+        // 4. Sobrante visual (si sobra dinero, se suma al primer alumno para mostrar el abono total)
+        if (bolsaGeneral > 0 && detalles.length > 0) {
+            detalles[0].pagado += bolsaGeneral;
+        }
+
+        // 5. Definir estados y calcular Saldo Total (Suma de Pendientes)
+        let totalDeuda = 0;
+        detalles.forEach(d => {
+            d.estado = d.pendiente > 0.5 ? 'DEBE' : 'SOLVENTE';
+            totalDeuda += d.pendiente;
+        });
+
+        setDetallesAlumnos(detalles);
+        setSaldoReal(totalDeuda);
     };
 
     const buscarRepresentante = async () => {
         if (!cedulaBusqueda) return;
         setSearching(true);
         setRepresentante(null);
+        setDetallesAlumnos([]);
+        setHistorialPagos([]);
         try {
             const rep = await db.getRepresentanteByCedula(cedulaBusqueda);
             if (rep) {
                 setRepresentante(rep);
+                
+                // Cargar historial
+                const all = await db.getPagos();
+                const repPagos = all.filter(p => p.cedulaRepresentante === rep.cedula);
+                setHistorialPagos(repPagos.sort((a,b) => new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime()));
+
                 // Reset form defaults
                 setEstudianteId('TODOS');
                 setMontoUSD('');
@@ -173,7 +254,7 @@ export const Pagos: React.FC = () => {
             let nombreAlumnoRegistro = "VARIOS";
             if (estudianteId !== 'TODOS') {
                 const alu = representante.alumnos.find(a => a.id === estudianteId);
-                if (alu) nombreAlumnoRegistro = `${alu.nombres} ${alu.apellidos}`;
+                if (alu) nombreAlumnoRegistro = `${alu.nombres}`; // + apellidos si existen
             }
 
             // Lógica de concepto
@@ -207,17 +288,14 @@ export const Pagos: React.FC = () => {
 
             await db.savePago(nuevoPago);
             
-            // Actualizar Historial Local
+            // Actualizar Historial Local (esto disparará el useEffect de cálculo)
             setHistorialPagos(prev => [nuevoPago, ...prev]);
-
-            // Recalcular saldo localmente para UI inmediata
-            setSaldoReal(prev => Math.max(0, prev - montoNum));
             
             alert(`Pago registrado exitosamente. Estado: ${estadoInicial}`);
             
             if (estadoInicial === EstadoPago.VERIFICADO) {
                 if(window.confirm("¿Desea generar el recibo?")) {
-                    generarRecibo(nuevoPago, saldoReal); // Pasamos saldo ANTES del pago
+                    generarRecibo(nuevoPago, saldoReal); // Pasamos saldo ANTES del recalculo (aprox)
                 }
             }
 
@@ -407,47 +485,60 @@ export const Pagos: React.FC = () => {
             {representante ? (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     
-                    {/* COLUMNA IZQUIERDA: DATOS MATRICULA */}
+                    {/* COLUMNA IZQUIERDA: DATOS MATRICULA DESGLOSADOS */}
                     <div className="lg:col-span-1 space-y-6">
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
                             <h3 className="text-lg font-bold text-slate-700 mb-4 border-b pb-2 flex items-center gap-2">
                                 <User size={20} className="text-indigo-500"/> Datos Matrícula
                             </h3>
                             
-                            <div className="space-y-4 mb-6">
+                            <div className="space-y-2 mb-4">
                                 <div>
                                     <p className="text-xs font-bold text-gray-400 uppercase">Representante</p>
                                     <p className="font-medium text-slate-800">{representante.nombres} {representante.apellidos}</p>
+                                    <p className="text-xs text-gray-500">{representante.cedula}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Cédula</p>
-                                    <p className="font-medium text-slate-800">{representante.cedula}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Matrícula Familiar</p>
+                                    <p className="text-xs font-bold text-gray-400 uppercase">Matrícula</p>
                                     <p className="font-mono text-xs bg-gray-100 p-1 rounded inline-block mt-1">{representante.matricula}</p>
                                 </div>
                             </div>
 
-                            <div className="mb-6">
-                                <p className="text-xs font-bold text-gray-400 uppercase mb-2">Alumnos:</p>
-                                <ul className="space-y-2">
-                                    {representante.alumnos.map((a, i) => (
-                                        <li key={i} className="flex items-start gap-2 text-sm bg-indigo-50 p-2 rounded-lg border border-indigo-100">
-                                            <div className="mt-0.5 bg-white p-1 rounded-full text-indigo-600"><User size={12}/></div>
-                                            <div>
-                                                <p className="font-bold text-indigo-900 leading-tight">{a.nombres}</p>
-                                                <p className="text-xs text-indigo-600">{a.nivel} - Sec {a.seccion}</p>
+                            {/* LISTA DETALLADA DE ALUMNOS */}
+                            <div className="mb-6 space-y-3">
+                                {detallesAlumnos.map((alu) => (
+                                    <div key={alu.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200 text-sm">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="font-bold text-indigo-900">{alu.nombre}</span>
+                                            {alu.estado === 'DEBE' ? (
+                                                <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">DEBE</span>
+                                            ) : (
+                                                <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">SOLVENTE</span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mb-2">{alu.nivel}</div>
+                                        <div className="flex justify-between text-xs border-t border-gray-200 pt-2">
+                                            <div className="text-center">
+                                                <p className="text-gray-400">Total</p>
+                                                <p className="font-medium">${alu.costo.toFixed(0)}</p>
                                             </div>
-                                        </li>
-                                    ))}
-                                </ul>
+                                            <div className="text-center">
+                                                <p className="text-gray-400">Abonado</p>
+                                                <p className="font-medium text-green-600">${alu.pagado.toFixed(0)}</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-gray-400">Pendiente</p>
+                                                <p className={`font-bold ${alu.pendiente > 0 ? 'text-red-600' : 'text-gray-600'}`}>${alu.pendiente.toFixed(0)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
 
-                            {/* TARJETA SALDO */}
+                            {/* TARJETA SALDO TOTAL */}
                             <div className={`p-5 rounded-xl border-2 ${saldoReal > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'} text-center`}>
                                 <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${saldoReal > 0 ? 'text-orange-700' : 'text-green-700'}`}>
-                                    {saldoReal > 0 ? 'Saldo Pendiente' : 'Solvente'}
+                                    {saldoReal > 0 ? 'Saldo Pendiente Total' : 'Familia Solvente'}
                                 </p>
                                 <h2 className={`text-3xl font-extrabold ${saldoReal > 0 ? 'text-orange-600' : 'text-green-600'}`}>
                                     ${saldoReal.toFixed(2)}
