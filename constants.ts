@@ -8,7 +8,7 @@ import { NivelEducativo } from './types';
 // 4. Publica como Web App (Acceso: "Cualquier persona").
 // 5. Pega la URL generada (termina en /exec) abajo:
 
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxnbe47fHyESuvdEDvwGyaeyZDRd3ZoO9X34GHlLcnFTV8brerm_q3Uq87bQ99HqVRV/exec"; 
+export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqlH8P8abpS5_Tz2P6KyuXc9ILtK_AwLR99-SHhS5EUGru5aPLO8yimFLRvD_fgY5N/exec"; 
 
 export const MENSUALIDADES: Record<NivelEducativo, number> = {
   [NivelEducativo.MATERNAL]: 120,
