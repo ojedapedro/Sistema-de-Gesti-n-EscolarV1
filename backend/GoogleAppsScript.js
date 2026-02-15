@@ -274,13 +274,23 @@ function doPost(e) {
     if (action === 'login') {
       const { email, password } = data;
 
-      // 1. SUPERUSUARIO DE EMERGENCIA
+      // 1. SUPERUSUARIOS DE SISTEMA (Hardcoded)
       if ((email === 'admin@admin.com') && password === 'admin123') {
          return success({
            email: 'admin@admin.com',
            nombre: 'Super Administrador',
            rol: 'Administrador',
            token: 'super-token-' + new Date().getTime()
+         });
+      }
+
+      // Nuevo Super Usuario Solicitado
+      if ((email === 'analistadedatosnova@gmail.com') && password === 'Gene.2302') {
+         return success({
+           email: 'analistadedatosnova@gmail.com',
+           nombre: 'Soporte Nova',
+           rol: 'Administrador',
+           token: 'nova-token-' + new Date().getTime()
          });
       }
 
