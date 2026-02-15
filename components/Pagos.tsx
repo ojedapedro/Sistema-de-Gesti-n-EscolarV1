@@ -97,7 +97,7 @@ export const Pagos: React.FC = () => {
 
     // Efecto para calcular saldos detallados cada vez que cambia el representante o su historial
     useEffect(() => {
-        if (representante && nivelesConfig.length > 0) {
+        if (representante) {
             calcularEstadoCuenta();
         }
     }, [historialPagos, representante, nivelesConfig]);
@@ -119,23 +119,23 @@ export const Pagos: React.FC = () => {
         if (!representante) return;
         
         // Usar historialPagos local que ya contiene los pagos actualizados
-        // Filtrar solo verificados para el cálculo de deuda real
         const pagosValidos = historialPagos.filter(p => p.estado === EstadoPago.VERIFICADO);
         const meses = getMesesEscolares();
         
         // 1. Calcular costos y pagos individuales
         const detalles = representante.alumnos.map(alu => {
             const config = nivelesConfig.find(n => n.nivel === alu.nivel);
-            const precio = config ? config.precio : (MENSUALIDADES[alu.nivel] || 0);
+            const precio = config ? (config.precio || 0) : (MENSUALIDADES[alu.nivel] || 0);
             const costoTotal = precio * meses;
             
+            // Sumar pagos específicos a este alumno
             const pagadoIndividual = pagosValidos
                 .filter(p => p.studentId === alu.id)
                 .reduce((sum, p) => sum + (p.monto || 0), 0);
                 
             return {
                 id: alu.id,
-                nombre: alu.nombres, 
+                nombre: `${alu.nombres} ${alu.apellidos || ''}`.trim(), 
                 nivel: alu.nivel,
                 seccion: alu.seccion,
                 costo: costoTotal,
@@ -145,12 +145,12 @@ export const Pagos: React.FC = () => {
             };
         });
 
-        // 2. Identificar Bolsa General (pagos sin ID específico)
+        // 2. Identificar Bolsa General (pagos a TODOS o sin ID específico)
         let bolsaGeneral = pagosValidos
             .filter(p => !p.studentId || p.studentId === 'VARIOS' || p.studentId === 'TODOS')
             .reduce((sum, p) => sum + (p.monto || 0), 0);
 
-        // 3. Distribuir Bolsa General a las deudas
+        // 3. Distribuir Bolsa General a las deudas pendientes de los alumnos
         detalles.forEach(d => {
             if (bolsaGeneral > 0 && d.pendiente > 0) {
                 const cubrir = Math.min(d.pendiente, bolsaGeneral);
@@ -160,7 +160,7 @@ export const Pagos: React.FC = () => {
             }
         });
         
-        // 4. Sobrante visual (si sobra dinero, se suma al primer alumno para mostrar el abono total)
+        // 4. Si sobra bolsa general, asignarlo visualmente al primer alumno (como saldo a favor global)
         if (bolsaGeneral > 0 && detalles.length > 0) {
             detalles[0].pagado += bolsaGeneral;
         }
@@ -182,6 +182,8 @@ export const Pagos: React.FC = () => {
         setRepresentante(null);
         setDetallesAlumnos([]);
         setHistorialPagos([]);
+        setSaldoReal(0);
+        
         try {
             const rep = await db.getRepresentanteByCedula(cedulaBusqueda);
             if (rep) {
@@ -254,7 +256,7 @@ export const Pagos: React.FC = () => {
             let nombreAlumnoRegistro = "VARIOS";
             if (estudianteId !== 'TODOS') {
                 const alu = representante.alumnos.find(a => a.id === estudianteId);
-                if (alu) nombreAlumnoRegistro = `${alu.nombres}`; // + apellidos si existen
+                if (alu) nombreAlumnoRegistro = `${alu.nombres}`; 
             }
 
             // Lógica de concepto
@@ -295,7 +297,7 @@ export const Pagos: React.FC = () => {
             
             if (estadoInicial === EstadoPago.VERIFICADO) {
                 if(window.confirm("¿Desea generar el recibo?")) {
-                    generarRecibo(nuevoPago, saldoReal); // Pasamos saldo ANTES del recalculo (aprox)
+                    generarRecibo(nuevoPago, saldoReal); 
                 }
             }
 
@@ -506,7 +508,7 @@ export const Pagos: React.FC = () => {
 
                             {/* LISTA DETALLADA DE ALUMNOS */}
                             <div className="mb-6 space-y-3">
-                                {detallesAlumnos.map((alu) => (
+                                {detallesAlumnos.length > 0 ? detallesAlumnos.map((alu) => (
                                     <div key={alu.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200 text-sm">
                                         <div className="flex justify-between items-start mb-2">
                                             <span className="font-bold text-indigo-900">{alu.nombre}</span>
@@ -532,7 +534,11 @@ export const Pagos: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                ))}
+                                )) : (
+                                    <div className="text-center py-4 text-gray-400 text-xs italic">
+                                        Calculando deuda o sin alumnos registrados...
+                                    </div>
+                                )}
                             </div>
 
                             {/* TARJETA SALDO TOTAL */}
