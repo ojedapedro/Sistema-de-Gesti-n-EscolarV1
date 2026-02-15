@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { User, UserRole } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Plus, Edit2, Trash2, Save, X, Loader2, User as UserIcon, Lock, Users } from 'lucide-react';
+import { Shield, Plus, Edit2, Trash2, Save, X, Loader2, User as UserIcon, Lock, Users, Mail, FileText } from 'lucide-react';
 
 export const Usuarios: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -42,15 +42,15 @@ export const Usuarios: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (cedula: string) => {
-    if (cedula === currentUser?.cedula) {
+  const handleDelete = async (email: string) => {
+    if (email === currentUser?.email) {
       alert("No puedes eliminar tu propio usuario.");
       return;
     }
     if (window.confirm("¿Seguro que desea eliminar este usuario?")) {
       setLoading(true);
       try {
-        await db.deleteUser(cedula);
+        await db.deleteUser(email);
         await cargarUsuarios();
         setMensaje({ type: 'success', text: 'Usuario eliminado' });
       } catch (e) {
@@ -63,8 +63,8 @@ export const Usuarios: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingUser.cedula || !editingUser.nombre || !editingUser.password || !editingUser.rol) {
-      alert("Todos los campos son obligatorios");
+    if (!editingUser.email || !editingUser.nombre || !editingUser.password || !editingUser.rol) {
+      alert("Todos los campos obligatorios deben llenarse");
       return;
     }
 
@@ -73,7 +73,7 @@ export const Usuarios: React.FC = () => {
       await db.saveUser(editingUser as User);
       setIsModalOpen(false);
       await cargarUsuarios();
-      setMensaje({ type: 'success', text: 'Datos guardados en UserAdmin' });
+      setMensaje({ type: 'success', text: 'Datos guardados correctamente' });
     } catch (e) {
       console.error(e);
       setMensaje({ type: 'error', text: 'Error guardando usuario' });
@@ -100,7 +100,7 @@ export const Usuarios: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Users className="text-indigo-600" /> Personal Administrativo
           </h2>
-          <p className="text-sm text-gray-500">Gestión de usuarios y permisos (Hoja: UserAdmin).</p>
+          <p className="text-sm text-gray-500">Gestión de usuarios y permisos (Login con Email).</p>
         </div>
         <button 
           onClick={() => handleOpenModal()}
@@ -123,20 +123,22 @@ export const Usuarios: React.FC = () => {
           <table className="w-full text-sm text-left text-gray-500">
             <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
               <tr>
-                <th className="px-6 py-3">Usuario (Cédula)</th>
+                <th className="px-6 py-3">Usuario (Email)</th>
                 <th className="px-6 py-3">Nombre</th>
+                <th className="px-6 py-3">Cédula</th>
                 <th className="px-6 py-3">Rol Asignado</th>
                 <th className="px-6 py-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-8 text-center">No hay usuarios en UserAdmin (solo SuperAdmin).</td></tr>
+                <tr><td colSpan={5} className="px-6 py-8 text-center">No hay usuarios registrados.</td></tr>
               ) : (
                 users.map((u) => (
-                  <tr key={u.cedula} className="bg-white border-b hover:bg-gray-50">
-                    <td className="px-6 py-4 font-mono font-bold text-gray-700">{u.cedula}</td>
+                  <tr key={u.email} className="bg-white border-b hover:bg-gray-50">
+                    <td className="px-6 py-4 font-bold text-indigo-700">{u.email}</td>
                     <td className="px-6 py-4">{u.nombre}</td>
+                    <td className="px-6 py-4 text-gray-500">{u.cedula || '-'}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full text-xs border ${
                         u.rol === UserRole.ADMIN ? 'bg-indigo-50 border-indigo-200 text-indigo-700' :
@@ -148,7 +150,7 @@ export const Usuarios: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right flex justify-end gap-2">
                       <button onClick={() => handleOpenModal(u)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit2 size={16} /></button>
-                      <button onClick={() => handleDelete(u.cedula)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                      <button onClick={() => handleDelete(u.email)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                     </td>
                   </tr>
                 ))
@@ -173,33 +175,50 @@ export const Usuarios: React.FC = () => {
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cédula (Login ID)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico *</label>
                 <div className="relative">
-                   <UserIcon size={16} className="absolute left-3 top-3 text-gray-400" />
+                   <Mail size={16} className="absolute left-3 top-3 text-gray-400" />
                    <input 
-                      type="text" 
-                      value={editingUser.cedula || ''}
-                      onChange={e => setEditingUser({...editingUser, cedula: e.target.value})}
+                      type="email" 
+                      value={editingUser.email || ''}
+                      onChange={e => setEditingUser({...editingUser, email: e.target.value})}
                       className="w-full pl-9 border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
-                      placeholder="Ej: admin01"
-                      disabled={!!editingUser.token} // No editar ID si ya existe (simulado por token/existencia)
+                      placeholder="usuario@colegio.com"
+                      // disabled={!!editingUser.token} // Permitir corregir email si es necesario
                    />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
-                <input 
-                  type="text" 
-                  value={editingUser.nombre || ''}
-                  onChange={e => setEditingUser({...editingUser, nombre: e.target.value})}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="Ej: Juan Pérez"
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo *</label>
+                <div className="relative">
+                   <UserIcon size={16} className="absolute left-3 top-3 text-gray-400" />
+                   <input 
+                    type="text" 
+                    value={editingUser.nombre || ''}
+                    onChange={e => setEditingUser({...editingUser, nombre: e.target.value})}
+                    className="w-full pl-9 border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Ej: Juan Pérez"
+                   />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rol / Privilegios</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cédula (Opcional)</label>
+                <div className="relative">
+                   <FileText size={16} className="absolute left-3 top-3 text-gray-400" />
+                   <input 
+                    type="text" 
+                    value={editingUser.cedula || ''}
+                    onChange={e => setEditingUser({...editingUser, cedula: e.target.value})}
+                    className="w-full pl-9 border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder="Ej: V-12345678"
+                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rol / Privilegios *</label>
                 <select 
                   value={editingUser.rol}
                   onChange={e => setEditingUser({...editingUser, rol: e.target.value as UserRole})}
@@ -212,7 +231,7 @@ export const Usuarios: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña *</label>
                 <div className="relative">
                    <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
                    <input 

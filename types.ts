@@ -44,10 +44,11 @@ export enum UserRole {
 }
 
 export interface User {
-  cedula: string;
+  email: string; // Nuevo ID principal
   nombre: string;
   rol: UserRole;
-  password?: string; // Nuevo campo opcional para gestión
+  password?: string; 
+  cedula?: string; // Opcional, solo informativo
   token?: string;
 }
 

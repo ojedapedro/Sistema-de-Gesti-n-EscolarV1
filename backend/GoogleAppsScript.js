@@ -126,10 +126,11 @@ function doGet(e) {
         const rows = sheet.getDataRange().getValues();
         rows.shift(); 
         result = rows.map(row => ({
-          cedula: String(row[0]),
+          email: String(row[0]), // Column A: Email
           nombre: String(row[1]),
           rol: String(row[2]),
-          password: String(row[3])
+          // password: String(row[3]), // No devolvemos password en lista
+          cedula: String(row[4] || '')
         }));
       }
     }
@@ -271,57 +272,107 @@ function doPost(e) {
 
     // --- AUTENTICACIÓN ---
     if (action === 'login') {
-      const { cedula, password } = data;
+      const { email, password } = data;
 
       // 1. SUPERUSUARIO DE EMERGENCIA
-      if ((cedula === 'admin' || cedula === 'superadmin') && password === 'admin123') {
+      if ((email === 'admin@admin.com') && password === 'admin123') {
          return success({
-           cedula: '0000',
+           email: 'admin@admin.com',
            nombre: 'Super Administrador',
            rol: 'Administrador',
            token: 'super-token-' + new Date().getTime()
          });
       }
 
-      // 2. Usuarios Normales
+      // 2. Usuarios Normales (Email en Columna A)
       const sheet = ss.getSheetByName('UserAdmin');
-      if (!sheet) return errorResponse("BD Usuarios no inicializada. Corre la función setup() o entra con superadmin.");
+      if (!sheet) return errorResponse("BD Usuarios no inicializada.");
 
       const rows = sheet.getDataRange().getValues();
+      // Empezar en 1 para saltar header
       for (let i = 1; i < rows.length; i++) {
-        const rowCedula = String(rows[i][0]);
+        const rowEmail = String(rows[i][0]).trim().toLowerCase();
         const rowPass = String(rows[i][3]);
         
-        if (rowCedula === cedula && rowPass === password) {
+        if (rowEmail === email.trim().toLowerCase() && rowPass === password) {
           return success({
-            cedula: rowCedula,
+            email: rowEmail,
             nombre: String(rows[i][1]),
             rol: String(rows[i][2]),
+            cedula: String(rows[i][4] || ''),
             token: 'user-token-' + new Date().getTime()
           });
         }
       }
-      return errorResponse("Usuario o contraseña incorrectos");
+      return errorResponse("Correo electrónico o contraseña incorrectos");
+    }
+
+    if (action === 'recoverPassword') {
+      const { email } = data;
+      const sheet = ss.getSheetByName('UserAdmin');
+      if (!sheet) return errorResponse("BD no inicializada.");
+
+      const rows = sheet.getDataRange().getValues();
+      let foundUser = null;
+
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]).trim().toLowerCase() === email.trim().toLowerCase()) {
+          foundUser = {
+            nombre: rows[i][1],
+            password: rows[i][3]
+          };
+          break;
+        }
+      }
+
+      if (foundUser) {
+        // Enviar correo (Requiere permisos de MailApp)
+        try {
+          MailApp.sendEmail({
+            to: email,
+            subject: "Recuperación de Contraseña - AdminPro",
+            htmlBody: `
+              <h3>Hola ${foundUser.nombre},</h3>
+              <p>Has solicitado recuperar tu contraseña para el sistema de gestión escolar.</p>
+              <p>Tus credenciales son:</p>
+              <ul>
+                <li><b>Usuario:</b> ${email}</li>
+                <li><b>Contraseña:</b> ${foundUser.password}</li>
+              </ul>
+              <p>Por seguridad, te recomendamos eliminar este correo una vez hayas ingresado.</p>
+              <hr>
+              <small>Sistema AdminPro</small>
+            `
+          });
+          return success({ message: "Correo de recuperación enviado exitosamente." });
+        } catch (mailError) {
+          return errorResponse("Error enviando el correo: " + mailError.toString());
+        }
+      } else {
+        return errorResponse("El correo no se encuentra registrado en el sistema.");
+      }
     }
     
     // --- USUARIOS ---
     if (action === 'saveUser') {
-      let sheet = getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
+      let sheet = getOrCreateSheet(ss, 'UserAdmin', ['Email', 'Nombre', 'Rol', 'Password', 'Cedula']);
       const rows = sheet.getDataRange().getValues();
       let rowIndex = -1;
 
       for (let i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]) === String(data.cedula)) {
+        if (String(rows[i][0]).trim().toLowerCase() === String(data.email).trim().toLowerCase()) {
           rowIndex = i + 1; 
           break;
         }
       }
 
       if (rowIndex > 0) {
-        sheet.getRange(rowIndex, 1, 1, 4).setValues([[data.cedula, data.nombre, data.rol, data.password]]);
+        // Actualizar (Manteniendo la fila, sobreescribiendo datos)
+        // Col A: Email, Col B: Nombre, Col C: Rol, Col D: Password, Col E: Cedula
+        sheet.getRange(rowIndex, 1, 1, 5).setValues([[data.email, data.nombre, data.rol, data.password, data.cedula || '']]);
         return success('Usuario actualizado');
       } else {
-        sheet.appendRow([data.cedula, data.nombre, data.rol, data.password]);
+        sheet.appendRow([data.email, data.nombre, data.rol, data.password, data.cedula || '']);
         return success('Usuario creado');
       }
     }
@@ -332,7 +383,7 @@ function doPost(e) {
       
       const rows = sheet.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]) === String(data.cedula)) {
+        if (String(rows[i][0]).trim().toLowerCase() === String(data.email).trim().toLowerCase()) {
           sheet.deleteRow(i + 1);
           return success('Usuario eliminado');
         }
@@ -609,7 +660,9 @@ function setup() {
     'paymentMethod', 'reference', 'amount$', 'amountBs', 
     'status', 'observations', 'representativeName', 'matricula', 'paymentForm'
   ]);
-  getOrCreateSheet(ss, 'UserAdmin', ['Cedula', 'Nombre', 'Rol', 'Password']);
+  // Tabla UserAdmin Actualizada: Email en Col A
+  getOrCreateSheet(ss, 'UserAdmin', ['Email', 'Nombre', 'Rol', 'Password', 'Cedula']);
+  
   getOrCreateSheet(ss, 'InventoryItems', ['ID', 'Nombre', 'Categoria', 'Unidad', 'StockMinimo']);
   getOrCreateSheet(ss, 'InventoryMovements', ['ID', 'Fecha', 'ArticuloID', 'NombreArticulo', 'Categoria', 'Tipo', 'Cantidad', 'SolicitanteProveedor', 'Motivo', 'Usuario', 'CostoTotal', 'PrecioUnitario']);
   getOrCreateSheet(ss, 'Employees', ['ID', 'Cedula', 'Nombres', 'Apellidos', 'Departamento', 'Cargo', 'FechaIngreso', 'Sueldo', 'Bono', 'Vacaciones', 'Estado']);

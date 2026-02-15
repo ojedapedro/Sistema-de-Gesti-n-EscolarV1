@@ -55,14 +55,20 @@ class DatabaseService {
   }
 
   // --- Auth & Users ---
-  async login(cedula: string, password: string): Promise<User> {
-    const response = await this.fetchAPI('login', { cedula, password }, 'POST');
+  async login(email: string, password: string): Promise<User> {
+    const response = await this.fetchAPI('login', { email, password }, 'POST');
     return {
-      cedula: response.cedula,
+      email: response.email,
       nombre: response.nombre,
       rol: response.rol,
+      cedula: response.cedula,
       token: response.token
     };
+  }
+
+  async recoverPassword(email: string): Promise<{message: string}> {
+    const response = await this.fetchAPI('recoverPassword', { email }, 'POST');
+    return response;
   }
 
   async getUsers(): Promise<User[]> {
@@ -74,8 +80,8 @@ class DatabaseService {
     await this.fetchAPI('saveUser', user, 'POST');
   }
 
-  async deleteUser(cedula: string): Promise<void> {
-    await this.fetchAPI('deleteUser', { cedula }, 'POST');
+  async deleteUser(email: string): Promise<void> {
+    await this.fetchAPI('deleteUser', { email }, 'POST');
   }
 
   // --- Configuración ---
