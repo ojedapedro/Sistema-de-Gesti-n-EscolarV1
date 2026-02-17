@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen, LogOut, Shield, Package, Briefcase, Landmark } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { LayoutDashboard, UserPlus, Banknote, FileCheck, FileText, Menu, Settings, BookOpen, LogOut, Shield, Package, Briefcase, Landmark, Download } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 
@@ -13,8 +13,27 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, toggleSidebar }) => {
   const { user, logout, hasRole } = useAuth();
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const logoUrl = "https://i.ibb.co/FbHJbvVT/images.png";
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstall = () => {
+    if(installPrompt) {
+        installPrompt.prompt();
+        installPrompt.userChoice.then((choice: any) => {
+            if(choice.outcome === 'accepted') setInstallPrompt(null);
+        });
+    }
+  };
 
   // Definir ítems y permisos
   const allMenuItems = [
@@ -116,7 +135,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, 
           </div>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
+          {installPrompt && (
+             <button
+                onClick={handleInstall}
+                className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg mb-4 hover:brightness-110 transition-all"
+             >
+                <Download size={20} />
+                <span className="font-bold">Instalar App</span>
+             </button>
+          )}
+
           {visibleItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -148,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isOpen, 
             <span>Cerrar Sesión</span>
           </button>
           <div className="mt-3 text-[10px] text-slate-600 text-center">
-             v1.1 | BD: Google Sheets
+             v1.2 (PWA) | BD: Google Sheets
           </div>
         </div>
       </div>

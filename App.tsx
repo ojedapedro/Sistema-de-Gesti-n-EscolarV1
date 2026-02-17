@@ -13,6 +13,7 @@ import { Almacen } from './components/Almacen';
 import { Nomina } from './components/Nomina';
 import { PagosServicios } from './components/PagosServicios';
 import { Login } from './components/Login';
+import { InstallPrompt } from './components/InstallPrompt';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { Loader2 } from 'lucide-react';
@@ -33,7 +34,12 @@ const AppContent: React.FC = () => {
 
   // Si no hay usuario, mostrar Login
   if (!user) {
-    return <Login />;
+    return (
+      <>
+        <Login />
+        <InstallPrompt />
+      </>
+    );
   }
 
   // Router interno simple
@@ -68,6 +74,8 @@ const AppContent: React.FC = () => {
           {renderView()}
         </div>
       </main>
+      
+      <InstallPrompt />
     </div>
   );
 };
