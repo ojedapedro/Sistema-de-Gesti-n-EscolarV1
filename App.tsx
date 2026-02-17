@@ -14,6 +14,7 @@ import { Nomina } from './components/Nomina';
 import { PagosServicios } from './components/PagosServicios';
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -24,7 +25,7 @@ const AppContent: React.FC = () => {
   // Si está cargando la sesión (leyendo localStorage), mostrar spinner
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#1e1e2d]">
         <Loader2 className="animate-spin text-indigo-600" size={48} />
       </div>
     );
@@ -54,7 +55,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-[#1e1e2d] dark:text-slate-200 transition-colors duration-300">
       <Sidebar 
         currentView={currentView} 
         setView={setCurrentView} 
@@ -74,7 +75,9 @@ const AppContent: React.FC = () => {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </AuthProvider>
   );
 }

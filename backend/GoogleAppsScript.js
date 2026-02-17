@@ -1,8 +1,9 @@
 
 // --- CONFIGURACIÓN OBLIGATORIA ---
-// Copia el ID de tu hoja de cálculo de la URL del navegador.
-// Ejemplo: https://docs.google.com/spreadsheets/d/13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs/edit
-// El ID es: 13pCWr4GvNgysOCddPLhkgsj6iVNwfbrE9JyAJIJPhgs
+// 1. Abre tu hoja de cálculo en el navegador.
+// 2. Mira la URL: https://docs.google.com/spreadsheets/d/1abc123.../edit
+// 3. Copia el texto largo entre '/d/' y '/edit'. ESE ES EL ID.
+// 4. Pégalo abajo dentro de las comillas.
 
 const SPREADSHEET_ID = 'PONER_AQUI_EL_ID_DE_TU_HOJA_DE_CALCULO'; 
 
@@ -11,10 +12,7 @@ function doGet(e) {
   lock.tryLock(10000);
   
   try {
-    if (SPREADSHEET_ID.includes('PONER_AQUI')) {
-      return errorResponse("ERROR CRÍTICO: No has configurado el SPREADSHEET_ID en el código de Apps Script.");
-    }
-
+    validarSpreadsheetId();
     const action = e.parameter.action;
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     
@@ -259,10 +257,7 @@ function doPost(e) {
   lock.tryLock(10000);
 
   try {
-    if (SPREADSHEET_ID.includes('PONER_AQUI')) {
-      return errorResponse("ERROR: Configura el SPREADSHEET_ID en el backend.");
-    }
-    
+    validarSpreadsheetId();
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     let body = {};
     try { body = JSON.parse(e.postData.contents); } catch(e) { return errorResponse("Invalid JSON"); }
@@ -627,6 +622,12 @@ function doPost(e) {
   }
 }
 
+function validarSpreadsheetId() {
+  if (!SPREADSHEET_ID || SPREADSHEET_ID.includes('PONER_AQUI')) {
+    throw new Error("ERROR DE CONFIGURACIÓN: No has configurado el SPREADSHEET_ID en el archivo Código.gs. Por favor, abre el script, pega el ID de tu hoja de cálculo en la línea 9 y vuelve a implementar.");
+  }
+}
+
 function getOrCreateSheet(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
@@ -659,7 +660,14 @@ function errorResponse(msg) {
 }
 
 function setup() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  validarSpreadsheetId();
+  let ss;
+  try {
+    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  } catch (e) {
+    throw new Error("ERROR DE CONEXIÓN: El ID '" + SPREADSHEET_ID + "' no es válido o no tienes permisos para acceder a esta hoja. Verifica que copiaste solo el ID (cadena alfanumérica) y no la URL completa.");
+  }
+
   getOrCreateSheet(ss, 'Config', ['Tasa', 'Fecha']);
   getOrCreateSheet(ss, 'Levels', ['Nivel', 'PrecioUSD']);
   getOrCreateSheet(ss, 'Representatives', ['Cedula', 'NombreCompleto', 'Telefono', 'Correo', 'Direccion', 'Matricula']);

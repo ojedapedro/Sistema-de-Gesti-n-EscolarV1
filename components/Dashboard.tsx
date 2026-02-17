@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Users, AlertCircle, Banknote, TrendingUp, Loader2, Calendar, PieChart, DollarSign, Wallet, TrendingDown } from 'lucide-react';
@@ -120,67 +121,67 @@ export const Dashboard: React.FC = () => {
   const metodosOrdenados = Object.entries(metodosData).sort((a,b) => b[1] - a[1]);
 
   return (
-    <div className="space-y-6 pb-20 md:pb-0">
+    <div className="space-y-6 pb-20 md:pb-0 animate-in fade-in">
       {/* HEADER: Adaptable a móvil */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
-           <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
-           <p className="text-sm text-gray-500 md:hidden font-medium mt-1">{nombreMes} {anioActual}</p>
+           <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Panel de Control</h2>
+           <p className="text-sm text-gray-500 dark:text-gray-400 md:hidden font-medium mt-1">{nombreMes} {anioActual}</p>
         </div>
         
         {/* Tarjeta de Tasa: Full width en móvil */}
-        <div className="w-full md:w-auto bg-white px-5 py-3 rounded-xl shadow-sm border border-indigo-100 flex justify-between md:justify-start items-center gap-4 transition-transform active:scale-[0.99]">
+        <div className="w-full md:w-auto bg-white dark:bg-[#151521] dark:border-gray-800 px-5 py-3 rounded-xl shadow-sm border border-indigo-100 flex justify-between md:justify-start items-center gap-4 transition-transform active:scale-[0.99]">
             <div className="flex items-center gap-2">
                 <TrendingUp size={20} className="text-indigo-600"/>
-                <span className="text-sm font-medium text-gray-600">Tasa BCV:</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Tasa BCV:</span>
             </div>
-            <span className="text-xl font-bold text-slate-800">Bs. {(tasa || 0).toFixed(2)}</span>
+            <span className="text-xl font-bold text-slate-800 dark:text-white">Bs. {(tasa || 0).toFixed(2)}</span>
         </div>
       </div>
 
       {/* Tarjetas Principales (KPIs Globales) - Grid responsive */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-3 bg-green-100 rounded-full text-green-600 flex-shrink-0">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full text-green-600 dark:text-green-400 flex-shrink-0">
                 <Banknote size={28} />
             </div>
             <div className="min-w-0">
-                <p className="text-sm text-gray-500 font-medium truncate">Recaudado Histórico</p>
-                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 truncate">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-                <p className="text-xs font-semibold text-green-600 truncate">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium truncate">Recaudado Histórico</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 dark:text-white truncate">${(totalRecaudadoHistorico || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-green-600 dark:text-green-400 truncate">~ Bs. {(totalRecaudadoHistoricoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
         </div>
 
         {/* NUEVA TARJETA: Morosidad */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-red-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-3 bg-red-100 rounded-full text-red-600 flex-shrink-0">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 p-5 rounded-xl shadow-sm border border-red-100 dark:border-gray-800 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-red-100 dark:bg-red-900/30 rounded-full text-red-600 dark:text-red-400 flex-shrink-0">
                 <TrendingDown size={28} />
             </div>
             <div className="min-w-0">
-                <p className="text-sm text-gray-500 font-medium truncate">Morosidad Global</p>
-                <h3 className="text-xl lg:text-2xl font-bold text-red-600 truncate">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
-                <p className="text-xs font-semibold text-red-500 truncate">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium truncate">Morosidad Global</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-red-600 dark:text-red-400 truncate">${(totalMorosidad || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</h3>
+                <p className="text-xs font-semibold text-red-500 dark:text-red-400 truncate">~ Bs. {(totalMorosidadBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-3 bg-yellow-100 rounded-full text-yellow-600 flex-shrink-0">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full text-yellow-600 dark:text-yellow-400 flex-shrink-0">
                 <AlertCircle size={28} />
             </div>
             <div className="min-w-0">
-                <p className="text-sm text-gray-500 font-medium truncate">Pagos Pendientes</p>
-                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{pagosPendientes}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium truncate">Pagos Pendientes</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 dark:text-white">{pagosPendientes}</h3>
                 <p className="text-xs text-gray-400 mt-1 truncate">Requieren verificación</p>
             </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
-            <div className="p-3 bg-indigo-100 rounded-full text-indigo-600 flex-shrink-0">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-shadow hover:shadow-md">
+            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 flex-shrink-0">
                 <Users size={28} />
             </div>
             <div className="min-w-0">
-                <p className="text-sm text-gray-500 font-medium truncate">Estudiantes Activos</p>
-                <h3 className="text-xl lg:text-2xl font-bold text-slate-800">{totalAlumnos}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium truncate">Estudiantes Activos</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-slate-800 dark:text-white">{totalAlumnos}</h3>
                 <p className="text-xs text-gray-400 mt-1 truncate">{reps.length} Familias</p>
             </div>
         </div>
@@ -189,8 +190,8 @@ export const Dashboard: React.FC = () => {
       {/* SECCIÓN: Resumen del Mes Actual */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Tarjeta de Totales del Mes */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-6 border-b pb-2">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <h3 className="text-lg font-bold text-slate-700 dark:text-gray-200 flex items-center gap-2 mb-6 border-b dark:border-gray-700 pb-2">
             <Calendar className="text-indigo-600" size={20} /> 
             <span className="truncate">Resumen: <span className="capitalize">{nombreMes}</span></span>
           </h3>
@@ -198,29 +199,29 @@ export const Dashboard: React.FC = () => {
           {/* Grilla flexible: 1 columna en móvil, 2 en tablet+ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
              {/* Total USD */}
-             <div className="bg-green-50 rounded-xl p-4 border border-green-100 relative overflow-hidden">
+             <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-green-100 dark:border-green-800 relative overflow-hidden">
                 <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
-                   <DollarSign size={64} className="text-green-800" />
+                   <DollarSign size={64} className="text-green-800 dark:text-green-400" />
                 </div>
-                <p className="text-xs font-bold text-green-700 uppercase tracking-wide">Total USD ($)</p>
-                <h4 className="text-3xl font-extrabold text-green-800 mt-2">
+                <p className="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wide">Total USD ($)</p>
+                <h4 className="text-3xl font-extrabold text-green-800 dark:text-green-300 mt-2">
                   ${totalMesUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </h4>
-                <div className="mt-3 w-full bg-green-200 rounded-full h-1.5">
+                <div className="mt-3 w-full bg-green-200 dark:bg-green-900 rounded-full h-1.5">
                   <div className="bg-green-600 h-1.5 rounded-full" style={{ width: '100%' }}></div>
                 </div>
              </div>
 
              {/* Total BS */}
-             <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 relative overflow-hidden">
+             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-100 dark:border-blue-800 relative overflow-hidden">
                 <div className="absolute right-0 top-0 p-4 opacity-10 pointer-events-none">
-                   <Wallet size={64} className="text-blue-800" />
+                   <Wallet size={64} className="text-blue-800 dark:text-blue-400" />
                 </div>
-                <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Total Bolívares</p>
-                <h4 className="text-2xl font-extrabold text-blue-800 mt-2 truncate" title={totalMesBs.toFixed(2)}>
+                <p className="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">Total Bolívares</p>
+                <h4 className="text-2xl font-extrabold text-blue-800 dark:text-blue-300 mt-2 truncate" title={totalMesBs.toFixed(2)}>
                   Bs. {totalMesBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                 </h4>
-                <div className="mt-3 w-full bg-blue-200 rounded-full h-1.5">
+                <div className="mt-3 w-full bg-blue-200 dark:bg-blue-900 rounded-full h-1.5">
                   <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: '100%' }}></div>
                 </div>
              </div>
@@ -228,8 +229,8 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Gráfico Simple: Distribución por Método */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4 border-b pb-2">
+        <div className="bg-white dark:bg-[#151521] dark:border-gray-800 rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <h3 className="text-lg font-bold text-slate-700 dark:text-gray-200 flex items-center gap-2 mb-4 border-b dark:border-gray-700 pb-2">
             <PieChart className="text-indigo-600" size={20} /> 
             Ingresos por Método
           </h3>
@@ -245,10 +246,10 @@ export const Dashboard: React.FC = () => {
                  return (
                    <div key={metodo}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium text-gray-700 truncate pr-2">{metodo}</span>
-                        <span className="font-bold text-gray-900 whitespace-nowrap">${montoNum.toLocaleString()} ({porcentaje}%)</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300 truncate pr-2">{metodo}</span>
+                        <span className="font-bold text-gray-900 dark:text-white whitespace-nowrap">${montoNum.toLocaleString()} ({porcentaje}%)</span>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                      <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5">
                         <div 
                           className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
                           style={{ width: `${anchoBarra}%` }}
@@ -263,13 +264,13 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Tabla Últimos Movimientos */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-         <div className="p-5 border-b border-gray-100 bg-gray-50">
-            <h3 className="font-bold text-gray-700 flex items-center gap-2"><Calendar size={20}/> Últimos Movimientos</h3>
+      <div className="bg-white dark:bg-[#151521] dark:border-gray-800 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+         <div className="p-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-[#1e1e2d]">
+            <h3 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2"><Calendar size={20}/> Últimos Movimientos</h3>
          </div>
          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left text-gray-500">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+            <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-100 dark:bg-[#252535]">
                     <tr>
                         <th className="px-6 py-3 whitespace-nowrap">Fecha</th>
                         <th className="px-6 py-3 whitespace-nowrap">Representante</th>
@@ -279,21 +280,21 @@ export const Dashboard: React.FC = () => {
                         <th className="px-6 py-3 text-center whitespace-nowrap">Estado</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                     {pagos.slice(-10).reverse().map((p, i) => (
-                        <tr key={i} className="bg-white border-b hover:bg-gray-50">
+                        <tr key={i} className="bg-white dark:bg-[#151521] border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-[#1e1e2d]">
                             <td className="px-6 py-4 whitespace-nowrap">{p.fechaRegistro}</td>
-                            <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{p.nombreRepresentante}</td>
+                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{p.nombreRepresentante}</td>
                             <td className="px-6 py-4 whitespace-nowrap">{p.metodoPago}</td>
                             <td className="px-6 py-4 font-mono text-xs whitespace-nowrap">{p.referencia}</td>
-                            <td className="px-6 py-4 text-right font-bold whitespace-nowrap">${(p.monto || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-bold whitespace-nowrap text-slate-800 dark:text-gray-200">${(p.monto || 0).toFixed(2)}</td>
                             <td className="px-6 py-4 text-center whitespace-nowrap">
                                 <span className={`px-2 py-1 rounded-full text-xs ${
                                     p.estado === EstadoPago.VERIFICADO 
-                                    ? 'bg-green-100 text-green-800' 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' 
                                     : p.estado === EstadoPago.RECHAZADO
-                                    ? 'bg-red-100 text-red-800'
-                                    : 'bg-yellow-100 text-yellow-800'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
                                 }`}>
                                     {p.estado}
                                 </span>

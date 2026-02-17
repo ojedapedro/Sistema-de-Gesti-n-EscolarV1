@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
   <head>
@@ -17,6 +18,22 @@
           API_KEY: MY_API_KEY 
         } 
       };
+
+      // Configuración de Tailwind para Modo Oscuro
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              dark: {
+                bg: '#1e1e2d',   // Fondo principal
+                card: '#151521', // Fondo de tarjetas
+                border: '#2d2d3b' // Bordes oscuros
+              }
+            }
+          }
+        }
+      }
     </script>
 
     <script type="importmap">
@@ -37,7 +54,7 @@
 </script>
   <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-gray-50 text-slate-900 antialiased">
+  <body class="bg-gray-50 dark:bg-[#1e1e2d] text-slate-900 dark:text-slate-200 antialiased transition-colors duration-300">
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
   <script type="module" src="/index.tsx"></script>
