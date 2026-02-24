@@ -4,7 +4,134 @@ import { ANIO_ESCOLAR_ACTUAL, MENSUALIDADES, GOOGLE_SCRIPT_URL } from '../consta
 
 class DatabaseService {
   
+  private isDemoMode(): boolean {
+    try {
+      const userStr = localStorage.getItem('adminpro_user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.email === 'demo@adminpro.com') return true;
+      }
+      return new URLSearchParams(window.location.search).get('demo') === 'true';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  private async mockFetchAPI(action: string, params: any = {}, method: 'GET' | 'POST' = 'GET'): Promise<any> {
+    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate network
+
+    const getStorage = (key: string, defaultValue: any) => {
+      const data = localStorage.getItem(`demo_${key}`);
+      return data ? JSON.parse(data) : defaultValue;
+    };
+
+    const setStorage = (key: string, value: any) => {
+      localStorage.setItem(`demo_${key}`, JSON.stringify(value));
+    };
+
+    switch (action) {
+      case 'login':
+        if (params.email === 'demo@adminpro.com') {
+          return { email: 'demo@adminpro.com', nombre: 'Usuario Demo', rol: 'Administrador', token: 'demo-token' };
+        }
+        throw new Error('Credenciales inválidas en modo demo');
+      
+      case 'getUsers': return getStorage('users', []);
+      case 'saveUser': 
+        const users = getStorage('users', []);
+        setStorage('users', [...users.filter((u: any) => u.email !== params.email), params]);
+        return { status: 'success' };
+      case 'deleteUser':
+        setStorage('users', getStorage('users', []).filter((u: any) => u.email !== params.email));
+        return { status: 'success' };
+        
+      case 'getConfig': return getStorage('config', { tasaCambio: 60, fechaActualizacion: new Date().toISOString() });
+      case 'saveConfig': setStorage('config', params); return { status: 'success' };
+      
+      case 'getNiveles': return getStorage('niveles', []);
+      case 'saveNiveles': setStorage('niveles', params); return { status: 'success' };
+      
+      case 'getRepresentantes': return getStorage('representantes', [
+        {
+          cedula: 'V-12345678',
+          nombres: 'Juan',
+          apellidos: 'Pérez',
+          telefono: '0414-1234567',
+          correo: 'juan.perez@example.com',
+          direccion: 'Av. Principal',
+          matricula: 'mat-2024-V-12345678',
+          alumnos: [
+            {
+              id: 'A-001',
+              nombres: 'Carlos',
+              apellidos: 'Pérez',
+              nivel: 'Primaria 1er Grado',
+              seccion: 'A',
+              mensualidad: 50
+            }
+          ]
+        }
+      ]);
+      case 'saveRepresentante':
+        const reps = getStorage('representantes', []);
+        setStorage('representantes', [...reps.filter((r: any) => r.cedula !== params.cedula), params]);
+        return { status: 'success' };
+        
+      case 'getPagos': return getStorage('pagos', []);
+      case 'savePago':
+        const pagos = getStorage('pagos', []);
+        setStorage('pagos', [...pagos, params]);
+        return { status: 'success' };
+      case 'updateEstadoPago':
+        const pagosToUpdate = getStorage('pagos', []);
+        const updatedPagos = pagosToUpdate.map((p: any) => p.id === params.id ? { ...p, estado: params.nuevoEstado } : p);
+        setStorage('pagos', updatedPagos);
+        return { status: 'success' };
+        
+      case 'getInventarioData':
+        return {
+          articulos: getStorage('articulos', []),
+          movimientos: getStorage('movimientos', [])
+        };
+      case 'saveArticulo':
+        const arts = getStorage('articulos', []);
+        setStorage('articulos', [...arts.filter((a: any) => a.id !== params.id), params]);
+        return { status: 'success' };
+      case 'saveMovimiento':
+        const movs = getStorage('movimientos', []);
+        setStorage('movimientos', [...movs, params]);
+        return { status: 'success' };
+      case 'saveMovimientoBatch':
+        const movsBatch = getStorage('movimientos', []);
+        setStorage('movimientos', [...movsBatch, ...params]);
+        return { status: 'success' };
+        
+      case 'getEmpleados': return getStorage('empleados', []);
+      case 'saveEmpleado':
+        const emps = getStorage('empleados', []);
+        setStorage('empleados', [...emps.filter((e: any) => e.id !== params.id), params]);
+        return { status: 'success' };
+      case 'saveNominaBatch':
+        const nomina = getStorage('nomina', []);
+        setStorage('nomina', [...nomina, ...params]);
+        return { status: 'success' };
+      case 'getNominaHistory': return getStorage('nomina', []);
+        
+      case 'getPagosServicios': return getStorage('pagosServicios', []);
+      case 'savePagoServicio':
+        const servs = getStorage('pagosServicios', []);
+        setStorage('pagosServicios', [...servs.filter((s: any) => s.id !== params.id), params]);
+        return { status: 'success' };
+        
+      default:
+        return { status: 'success' };
+    }
+  }
+
   private async fetchAPI(action: string, params: any = {}, method: 'GET' | 'POST' = 'GET'): Promise<any> {
+    if (this.isDemoMode()) {
+      return this.mockFetchAPI(action, params, method);
+    }
     
     // Validación de Configuración
     if (GOOGLE_SCRIPT_URL.includes("PONER_AQUI") || GOOGLE_SCRIPT_URL.includes("xxxxxx") || !GOOGLE_SCRIPT_URL.startsWith("http")) {
