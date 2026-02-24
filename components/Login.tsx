@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { db } from '../services/db';
 import { useAuth } from '../context/AuthContext';
+import { UserRole } from '../types';
 import { Loader2, Lock, User as UserIcon, LogIn, AlertCircle, Eye, EyeOff, Mail, ArrowLeft } from 'lucide-react';
 
 export const Login: React.FC = () => {
@@ -16,6 +17,8 @@ export const Login: React.FC = () => {
   const [view, setView] = useState<'LOGIN' | 'RECOVER'>('LOGIN');
   const [recoverEmail, setRecoverEmail] = useState('');
   const [recoverMsg, setRecoverMsg] = useState('');
+
+  const isDemoMode = new URLSearchParams(window.location.search).get('demo') === 'true';
 
   const logoUrl = "https://i.ibb.co/FbHJbvVT/images.png";
   // Illustration URL (Usando un placeholder 3D similar a la referencia)
@@ -186,6 +189,22 @@ export const Login: React.FC = () => {
                         >
                             {loading ? <Loader2 className="animate-spin" /> : 'Iniciar Sesión'}
                         </button>
+                        
+                        {isDemoMode && (
+                            <button 
+                                type="button" 
+                                onClick={() => {
+                                  login({
+                                    email: 'demo@adminpro.com',
+                                    nombre: 'Usuario Demo',
+                                    rol: UserRole.ADMIN
+                                  });
+                                }}
+                                className="w-full bg-slate-700 text-white py-3.5 rounded-xl hover:bg-slate-600 font-bold text-sm tracking-wide flex justify-center items-center gap-2 transition-all mt-2 active:scale-[0.98]"
+                            >
+                                Modo Demo
+                            </button>
+                        )}
                     </form>
                 </div>
             ) : (

@@ -12,14 +12,9 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState;
-  public readonly props: Readonly<ErrorBoundaryProps>;
-
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
-    // TypeScript knows props are assigned by React, but explicit declaration helps if types are lost
-    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
